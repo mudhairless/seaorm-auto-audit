@@ -1,0 +1,51 @@
+[package]
+name = "seaorm-auto-audit"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85.0"
+description = "Automatic audit trails for SeaORM entities: lifecycle hooks, a task-local actor, before/after snapshots and credential redaction."
+license = "MIT"
+repository = "https://github.com/mudhairless/ftg/tree/main/backend/audit"
+keywords = ["audit", "sea-orm", "database", "logging", "tracing"]
+categories = ["database", "development-tools::debugging"]
+
+[lib]
+name = "seaorm_auto_audit"
+path = "src/lib.rs"
+
+[[bin]]
+name = "seaorm-auto-audit-check"
+path = "src/bin/check.rs"
+
+[features]
+default = []
+# Middleware helpers for scoping the audit context around an HTTP request.
+axum = ["dep:axum"]
+
+[dependencies]
+async-trait = "0.1.89"
+chrono = { version = "0.4.42", features = ["serde"] }
+sea-orm = { version = "2.0.4", default-features = false, features = [
+    "macros",
+    "with-chrono",
+    "with-json",
+    "with-uuid",
+] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+tokio = { version = "1.54.0", features = ["rt"] }
+tracing = "0.1.44"
+uuid = { version = "1.18.1", features = ["serde", "v4"] }
+
+axum = { version = "0.8.9", optional = true }
+
+[dev-dependencies]
+axum = { version = "0.8.9", features = ["json", "macros"] }
+sea-orm = { version = "2.0.4", features = [
+    "mock",
+    "runtime-tokio-rustls",
+    "sqlx-postgres",
+] }
+tempfile = "3.23.0"
+tokio = { version = "1.54.0", features = ["full"] }
+tower = { version = "0.5.2", features = ["util"] }
