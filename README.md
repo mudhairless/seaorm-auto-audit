@@ -42,8 +42,13 @@ Three pieces, and only three:
 
 ### 1. The table
 
-[`sql/audits.sql`](sql/audits.sql) is the canonical DDL; run it, or copy the
-columns into the host application's migration. It creates:
+Use the appropriate DDL for your database backend:
+- Postgres: [`sql/setup.postgres.sql`](sql/setup.postgres.sql)
+- MySQL: [`sql/setup.mysql.sql`](sql/setup.mysql.sql)
+- SQLite: [`sql/setup.sqlite.sql`](sql/setup.sqlite.sql)
+
+Copy the columns into the host application's migration. The table is compatible
+with any SeaORM-supported database:
 
 | column            | meaning                                             |
 |-------------------|-----------------------------------------------------|
