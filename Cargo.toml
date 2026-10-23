@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.85.0"
 description = "Automatic audit trails for SeaORM entities: lifecycle hooks, a task-local actor, before/after snapshots and credential redaction."
 license = "MIT"
-repository = "https://github.com/mudhairless/ftg/tree/main/backend/audit"
+repository = "https://github.com/mudhairless/seaorm-auto-audit"
 keywords = ["audit", "sea-orm", "database", "logging", "tracing"]
 categories = ["database", "development-tools::debugging"]
 
