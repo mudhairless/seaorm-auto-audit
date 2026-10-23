@@ -40,7 +40,9 @@ CREATE TABLE IF NOT EXISTS users (
 "#;
 
 /// The DDL of the audit table, the same file the crate ships.
-const AUDITS_DDL: &str = include_str!("../sql/audits.sql");
+const AUDITS_DDL_POSTGRES: &str = include_str!("../sql/setup.postgres.sql");
+const AUDITS_DDL_MYSQL: &str = include_str!("../sql/setup.mysql.sql");
+const AUDITS_DDL_SQLITE: &str = include_str!("../sql/setup.sqlite.sql");
 
 /// The schema is created once per test run.
 static SETUP: OnceCell<()> = OnceCell::const_new();
@@ -57,7 +59,7 @@ async fn database() -> Option<DatabaseConnection> {
     SETUP
         .get_or_init(|| async {
             apply(&db, USERS_DDL).await;
-            apply(&db, AUDITS_DDL).await;
+            apply(&db, AUDITS_DDL_POSTGRES).await;
         })
         .await;
 
