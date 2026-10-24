@@ -1,5 +1,3 @@
-[![CI](https://github.com/mudhairless/seaorm-auto-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/mudhairless/seaorm-auto-audit/actions/workflows/ci.yml)
-
 # seaorm-auto-audit
 
 Automatic audit trails for [SeaORM](https://www.sea-ql.org/SeaORM/) entities.
