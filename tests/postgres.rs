@@ -41,8 +41,6 @@ CREATE TABLE IF NOT EXISTS users (
 
 /// The DDL of the audit table, the same file the crate ships.
 const AUDITS_DDL_POSTGRES: &str = include_str!("../sql/setup.postgres.sql");
-const AUDITS_DDL_MYSQL: &str = include_str!("../sql/setup.mysql.sql");
-const AUDITS_DDL_SQLITE: &str = include_str!("../sql/setup.sqlite.sql");
 
 /// The schema is created once per test run.
 static SETUP: OnceCell<()> = OnceCell::const_new();

@@ -71,7 +71,7 @@ async fn apply(db: &DatabaseConnection, ddl: &str) {
 
 async fn audits_of(db: &DatabaseConnection, id: Uuid) -> Vec<seaorm_auto_audit::audits::Model> {
     Audits::find()
-        .filter(seaorm_auto_audit::audits::Column::AuditableId.eq(id.to_string()))
+        .filter(seaorm_auto_audit::audits::Column::AuditableId.eq(id))
         .all(db)
         .await
         .expect("the audit rows should be readable")
@@ -88,7 +88,7 @@ async fn a_write_is_audited_in_a_real_database() {
     let txn = db.begin().await.expect("the transaction should start");
     scope(Some(actor), async {
         ActiveModel {
-            id: Set(id.to_string()),
+            id: Set(id),
             name: Set("Ada".to_owned()),
             email: Set(Some("ada@example.com".to_owned())),
             password_hash: Set(Some("hash-before".to_owned())),
@@ -106,9 +106,9 @@ async fn a_write_is_audited_in_a_real_database() {
 
     let audit = &audits[0];
     assert_eq!(audit.auditable_table, "users");
-    assert_eq!(audit.auditable_id.to_string(), id.to_string());
+    assert_eq!(audit.auditable_id, id);
     assert_eq!(audit.action, "create");
-    assert_eq!(audit.updated_by_id.as_ref().map(|v| v.to_string()), Some(actor.to_string()));
+    assert_eq!(audit.updated_by_id, Some(actor));
     assert!(audit.before_content.is_none(), "a create has no before");
 
     let after = audit.after_content.as_ref().expect("an after");
