@@ -22,7 +22,7 @@ jobs:
     name: fmt, clippy, test (stable)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
@@ -54,15 +54,15 @@ jobs:
         run: cargo doc --all-features --no-deps
 
   msrv:
-    name: MSRV check (1.85.0)
+    name: MSRV check (1.94.0)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Install Rust 1.85.0
+      - name: Install Rust 1.94.0
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.85.0
+          toolchain: 1.94.0
 
       - uses: Swatinem/rust-cache@v2
 
@@ -87,7 +87,7 @@ jobs:
     env:
       DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/postgres
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
@@ -118,7 +118,7 @@ jobs:
     env:
       MYSQL_DATABASE_URL: mysql://root:password@127.0.0.1:3306/seaorm_auto_audit_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master

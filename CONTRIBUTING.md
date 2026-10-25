@@ -15,7 +15,7 @@ Contributions are welcome. Please feel free to submit issues and pull requests.
 
 ### Prerequisites
 
-- Rust 1.85.0 or later (see `rust-version` in Cargo.toml)
+- Rust 1.94.0 or later (see `rust-version` in Cargo.toml)
 - For integration tests: PostgreSQL (optional)
 
 ### Building
