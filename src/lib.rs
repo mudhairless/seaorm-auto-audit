@@ -66,6 +66,7 @@ pub mod audits;
 pub mod bulk;
 pub mod context;
 pub mod hooks;
+pub mod id;
 pub mod record;
 pub mod redact;
 pub mod scan;
@@ -84,5 +85,6 @@ pub use context::{
     scope_with_request,
 };
 pub use hooks::{after_delete, after_save, before_delete, before_save, write_record};
+pub use id::AuditId;
 pub use record::{AuditAction, AuditRecord, UnknownAction};
 pub use redact::REDACTED;

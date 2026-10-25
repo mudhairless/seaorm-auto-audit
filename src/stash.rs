@@ -21,9 +21,9 @@ use sea_orm::{
 };
 use serde::Serialize;
 use serde_json::Value as Json;
-use uuid::Uuid;
 
 use crate::auditable::Auditable;
+use crate::id::AuditId;
 
 /// Identifies one audited row of one table.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -85,7 +85,7 @@ fn key_string(values: &[Value]) -> String {
 #[derive(Clone, Debug)]
 pub(crate) enum Stashed {
     /// The row existed; this is its identifier and its snapshot.
-    Present { id: Uuid, snapshot: Json },
+    Present { id: AuditId, snapshot: Json },
     /// The row did not exist when it was looked up.
     Missing,
 }

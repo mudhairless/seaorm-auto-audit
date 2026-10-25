@@ -76,7 +76,7 @@ pub fn insert_columns(sql: &str) -> Vec<String> {
 
     sql[start + 1..end]
         .split(',')
-        .map(|column| column.trim().trim_matches('"').to_owned())
+        .map(|column| column.trim().trim_matches(['"', '`']).to_owned())
         .collect()
 }
 

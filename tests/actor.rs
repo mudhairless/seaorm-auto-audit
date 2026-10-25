@@ -7,18 +7,18 @@
 mod common;
 
 use common::{ActiveModel, insert_bindings, user};
-use seaorm_auto_audit::{current_user_id, scope};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, DbBackend, DbErr, MockDatabase, MockExecResult, Value,
 };
+use seaorm_auto_audit::{current_user_id, scope};
 use uuid::Uuid;
 
 #[tokio::test]
 async fn the_actor_is_read_from_the_task_local() {
     let actor = Uuid::new_v4();
 
-    scope(Some(actor), async {
-        assert_eq!(current_user_id(), Some(actor));
+    scope(Some(actor.into()), async {
+        assert_eq!(current_user_id(), Some(actor.into()));
     })
     .await;
 }
@@ -41,16 +41,16 @@ async fn the_inner_scope_wins() {
     let outer = Uuid::new_v4();
     let inner = Uuid::new_v4();
 
-    scope(Some(outer), async {
-        assert_eq!(current_user_id(), Some(outer));
+    scope(Some(outer.into()), async {
+        assert_eq!(current_user_id(), Some(outer.into()));
 
-        scope(Some(inner), async {
-            assert_eq!(current_user_id(), Some(inner));
+        scope(Some(inner.into()), async {
+            assert_eq!(current_user_id(), Some(inner.into()));
         })
         .await;
 
         // The inner scope is over: the outer one is back.
-        assert_eq!(current_user_id(), Some(outer));
+        assert_eq!(current_user_id(), Some(outer.into()));
     })
     .await;
 }
@@ -59,7 +59,7 @@ async fn the_inner_scope_wins() {
 async fn a_spawned_task_does_not_inherit_the_actor() {
     let actor = Uuid::new_v4();
 
-    let seen = scope(Some(actor), async {
+    let seen = scope(Some(actor.into()), async {
         tokio::spawn(async { current_user_id() })
             .await
             .expect("the spawned task should not panic")
@@ -74,14 +74,14 @@ async fn a_spawned_task_can_scope_its_own_actor() {
     let actor = Uuid::new_v4();
     let own = Uuid::new_v4();
 
-    let seen = scope(Some(actor), async {
-        tokio::spawn(async move { scope(Some(own), async { current_user_id() }).await })
+    let seen = scope(Some(actor.into()), async {
+        tokio::spawn(async move { scope(Some(own.into()), async { current_user_id() }).await })
             .await
             .expect("the spawned task should not panic")
     })
     .await;
 
-    assert_eq!(seen, Some(own));
+    assert_eq!(seen, Some(own.into()));
 }
 
 #[tokio::test]
@@ -97,7 +97,7 @@ async fn the_actor_reaches_the_audit_row() {
         }])
         .into_connection();
 
-    scope(Some(actor), async {
+    scope(Some(actor.into()), async {
         ActiveModel {
             id: Set(id),
             name: Set("Ada".to_owned()),
@@ -115,7 +115,10 @@ async fn the_actor_reaches_the_audit_row() {
     let statement = log.last().unwrap().statements().last().unwrap();
     let bindings = insert_bindings(statement);
 
-    assert_eq!(bindings["updated_by_id"], Value::Uuid(Some(actor)));
+    assert_eq!(
+        bindings["updated_by_id"],
+        Value::String(Some(actor.to_string()))
+    );
 }
 
 #[tokio::test]
@@ -125,7 +128,7 @@ async fn a_write_in_a_spawned_task_without_a_scope_fails() {
         .append_query_results([[user(id)]])
         .into_connection();
 
-    let result = scope(Some(Uuid::new_v4()), async {
+    let result = scope(Some(Uuid::new_v4().into()), async {
         tokio::spawn(async move {
             ActiveModel {
                 id: Set(id),

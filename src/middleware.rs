@@ -32,16 +32,23 @@ use axum::extract::{ConnectInfo, OriginalUri, Request};
 use axum::http::{HeaderMap, Uri, header};
 use axum::middleware::Next;
 use axum::response::Response;
-use uuid::Uuid;
 
 use crate::context::{RequestMetadata, scope_with_request};
+use crate::id::AuditId;
 
 /// The user making the change, carried in the request extensions.
 ///
 /// The authentication middleware puts one of these in the request; the audit
 /// middleware reads it back and scopes the audit context around the handler.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Actor(pub Uuid);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Actor(pub AuditId);
+
+impl Actor {
+    /// Build an actor from any supported identifier type.
+    pub fn new(id: impl Into<AuditId>) -> Self {
+        Self(id.into())
+    }
+}
 
 /// The client address, carried in the request extensions.
 ///
@@ -59,7 +66,7 @@ pub struct ClientIp(pub String);
 pub async fn scope_request(
     req: Request,
     next: Next,
-    resolve: impl Fn(&Request) -> Option<Uuid>,
+    resolve: impl Fn(&Request) -> Option<AuditId>,
 ) -> Response {
     let user_id = resolve(&req);
     let request = metadata_of(&req);
@@ -71,7 +78,7 @@ pub async fn scope_request(
 ///
 /// See [`Actor`].
 pub async fn scope_request_with_extension(req: Request, next: Next) -> Response {
-    let user_id = req.extensions().get::<Actor>().map(|actor| actor.0);
+    let user_id = req.extensions().get::<Actor>().map(|actor| actor.0.clone());
     let request = metadata_of(&req);
     scope_with_request(user_id, Some(request), next.run(req)).await
 }

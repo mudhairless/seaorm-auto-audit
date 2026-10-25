@@ -6,12 +6,12 @@
 mod common;
 
 use common::{ActiveModel, Entity, insert_bindings, json_of, user};
-use seaorm_auto_audit::{REDACTED, after_save, before_save, scope};
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::{NotSet, Set, Unchanged},
     DbBackend, DbErr, MockDatabase, MockExecResult, TransactionTrait, Value,
 };
+use seaorm_auto_audit::{REDACTED, after_save, before_save, scope};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -41,7 +41,7 @@ async fn an_insert_writes_one_audit_row() {
         }])
         .into_connection();
 
-    scope(Some(actor), async {
+    scope(Some(actor.into()), async {
         ActiveModel {
             id: Set(id),
             name: Set("Ada".to_owned()),
@@ -63,9 +63,15 @@ async fn an_insert_writes_one_audit_row() {
         bindings["auditable_table"],
         Value::String(Some("users".to_owned()))
     );
-    assert_eq!(bindings["auditable_id"], Value::Uuid(Some(id)));
+    assert_eq!(
+        bindings["auditable_id"],
+        Value::String(Some(id.to_string()))
+    );
     assert_eq!(bindings["action"], Value::String(Some("create".to_owned())));
-    assert_eq!(bindings["updated_by_id"], Value::Uuid(Some(actor)));
+    assert_eq!(
+        bindings["updated_by_id"],
+        Value::String(Some(actor.to_string()))
+    );
 
     // A create has no "before".
     assert_eq!(bindings["before_content"], Value::Json(None));
@@ -96,7 +102,7 @@ async fn an_update_records_the_before_and_after_state() {
         }])
         .into_connection();
 
-    scope(Some(actor), async {
+    scope(Some(actor.into()), async {
         ActiveModel {
             id: Unchanged(id),
             name: Set("Grace".to_owned()),
@@ -115,8 +121,14 @@ async fn an_update_records_the_before_and_after_state() {
 
     let bindings = insert_bindings(&audit_statement(&log));
     assert_eq!(bindings["action"], Value::String(Some("update".to_owned())));
-    assert_eq!(bindings["auditable_id"], Value::Uuid(Some(id)));
-    assert_eq!(bindings["updated_by_id"], Value::Uuid(Some(actor)));
+    assert_eq!(
+        bindings["auditable_id"],
+        Value::String(Some(id.to_string()))
+    );
+    assert_eq!(
+        bindings["updated_by_id"],
+        Value::String(Some(actor.to_string()))
+    );
 
     let before = json_of(&bindings["before_content"]);
     let after = json_of(&bindings["after_content"]);
@@ -146,7 +158,7 @@ async fn a_delete_records_the_state_the_row_had() {
         ])
         .into_connection();
 
-    scope(Some(actor), async {
+    scope(Some(actor.into()), async {
         ActiveModel {
             id: Unchanged(id),
             name: NotSet,
@@ -165,8 +177,14 @@ async fn a_delete_records_the_state_the_row_had() {
 
     let bindings = insert_bindings(&audit_statement(&log));
     assert_eq!(bindings["action"], Value::String(Some("delete".to_owned())));
-    assert_eq!(bindings["auditable_id"], Value::Uuid(Some(id)));
-    assert_eq!(bindings["updated_by_id"], Value::Uuid(Some(actor)));
+    assert_eq!(
+        bindings["auditable_id"],
+        Value::String(Some(id.to_string()))
+    );
+    assert_eq!(
+        bindings["updated_by_id"],
+        Value::String(Some(actor.to_string()))
+    );
 
     // A delete has no "after".
     assert_eq!(bindings["after_content"], Value::Json(None));
@@ -188,7 +206,7 @@ async fn the_audit_row_is_written_on_the_handle_of_the_write() {
         .into_connection();
 
     let txn = db.begin().await.expect("the transaction should start");
-    scope(Some(Uuid::new_v4()), async {
+    scope(Some(Uuid::new_v4().into()), async {
         ActiveModel {
             id: Set(id),
             name: Set("Ada".to_owned()),
@@ -285,7 +303,7 @@ async fn a_machine_made_change_is_audited_without_an_actor() {
     let bindings = insert_bindings(&audit_statement(&log));
 
     // Nobody was behind the change, but the change is still audited.
-    assert_eq!(bindings["updated_by_id"], Value::Uuid(None));
+    assert_eq!(bindings["updated_by_id"], Value::String(None));
     assert_eq!(bindings["action"], Value::String(Some("create".to_owned())));
 }
 
@@ -319,7 +337,7 @@ async fn two_rows_of_one_scope_keep_their_own_before_state() {
         ])
         .into_connection();
 
-    scope(Some(Uuid::new_v4()), async {
+    scope(Some(Uuid::new_v4().into()), async {
         ActiveModel {
             id: Unchanged(first),
             name: Set("Ada Lovelace".to_owned()),
@@ -356,11 +374,11 @@ async fn two_rows_of_one_scope_keep_their_own_before_state() {
 
     let first_row = audit_rows
         .iter()
-        .find(|bindings| bindings["auditable_id"] == Value::Uuid(Some(first)))
+        .find(|bindings| bindings["auditable_id"] == Value::String(Some(first.to_string())))
         .expect("an audit row for the first row");
     let second_row = audit_rows
         .iter()
-        .find(|bindings| bindings["auditable_id"] == Value::Uuid(Some(second)))
+        .find(|bindings| bindings["auditable_id"] == Value::String(Some(second.to_string())))
         .expect("an audit row for the second row");
 
     // Each audit row holds its own row's before-state.
@@ -395,7 +413,7 @@ async fn a_credential_change_is_marked_but_never_stored() {
         }])
         .into_connection();
 
-    scope(Some(Uuid::new_v4()), async {
+    scope(Some(Uuid::new_v4().into()), async {
         ActiveModel {
             id: Unchanged(id),
             name: NotSet,
@@ -437,7 +455,7 @@ async fn an_unchanged_credential_is_dropped_from_the_audit_row() {
         }])
         .into_connection();
 
-    scope(Some(Uuid::new_v4()), async {
+    scope(Some(Uuid::new_v4().into()), async {
         ActiveModel {
             id: Unchanged(id),
             name: Set("Grace".to_owned()),
@@ -484,7 +502,7 @@ async fn a_null_credential_becoming_a_hash_is_a_change() {
         }])
         .into_connection();
 
-    scope(Some(Uuid::new_v4()), async {
+    scope(Some(Uuid::new_v4().into()), async {
         ActiveModel {
             id: Unchanged(id),
             name: NotSet,
@@ -516,10 +534,9 @@ async fn a_null_credential_becoming_a_hash_is_a_change() {
 async fn a_bulk_write_outside_a_scope_fails_before_touching_the_database() {
     let db = MockDatabase::new(DbBackend::Postgres).into_connection();
 
-    let error =
-        seaorm_auto_audit::delete_many::<Entity, _>(&db, sea_orm::Condition::all())
-            .await
-            .expect_err("a bulk write outside a scope must fail");
+    let error = seaorm_auto_audit::delete_many::<Entity, _>(&db, sea_orm::Condition::all())
+        .await
+        .expect_err("a bulk write outside a scope must fail");
 
     assert!(error.to_string().contains("no audit scope"), "{error}");
     let log = db.into_transaction_log();
@@ -561,7 +578,7 @@ async fn two_interleaved_writes_to_the_same_row_do_not_share_a_before_state() {
         }])
         .into_connection();
 
-    scope(Some(Uuid::new_v4()), async {
+    scope(Some(Uuid::new_v4().into()), async {
         before_save::<Entity, _>(update(id, "Ada Lovelace"), &db, false)
             .await
             .expect("the first write reads its before state");
@@ -599,4 +616,70 @@ async fn two_interleaved_writes_to_the_same_row_do_not_share_a_before_state() {
         json_of(&bindings["after_content"])["name"],
         json!("Ada Lovelace")
     );
+}
+
+#[tokio::test]
+async fn an_insert_writes_one_audit_row_on_every_backend() {
+    for backend in [DbBackend::Postgres, DbBackend::MySql, DbBackend::Sqlite] {
+        let id = Uuid::new_v4();
+        let actor = Uuid::new_v4();
+        let db = MockDatabase::new(backend)
+            .append_query_results([[user(id)], [user(id)]])
+            .append_exec_results([
+                MockExecResult {
+                    rows_affected: 1,
+                    ..Default::default()
+                },
+                MockExecResult {
+                    rows_affected: 1,
+                    ..Default::default()
+                },
+            ])
+            .into_connection();
+
+        scope(Some(actor.into()), async {
+            ActiveModel {
+                id: Set(id),
+                name: Set("Ada".to_owned()),
+                email: Set(Some("ada@example.com".to_owned())),
+                password_hash: Set(Some("hash-before".to_owned())),
+                age: Set(36),
+            }
+            .insert(&db)
+            .await
+            .expect("the insert should succeed");
+        })
+        .await;
+
+        let log = db.into_transaction_log();
+        let bindings = insert_bindings(&audit_statement(&log));
+        assert_eq!(
+            bindings["auditable_table"],
+            Value::String(Some("users".to_owned())),
+            "{backend:?}"
+        );
+        assert_eq!(
+            bindings["auditable_id"],
+            Value::String(Some(id.to_string())),
+            "{backend:?}"
+        );
+        assert_eq!(
+            bindings["action"],
+            Value::String(Some("create".to_owned())),
+            "{backend:?}"
+        );
+        assert_eq!(
+            bindings["updated_by_id"],
+            Value::String(Some(actor.to_string())),
+            "{backend:?}"
+        );
+        assert_eq!(bindings["before_content"], Value::Json(None), "{backend:?}");
+
+        let after = json_of(&bindings["after_content"]);
+        assert_eq!(after["name"], json!("Ada"), "{backend:?}");
+        assert!(
+            after.get("password_hash").is_none(),
+            "the credential is never stored on {backend:?}: {after}"
+        );
+    }
 }

@@ -8,8 +8,8 @@ use std::future::Future;
 use std::sync::Mutex;
 
 use sea_orm::DbErr;
-use uuid::Uuid;
 
+use crate::id::AuditId;
 use crate::stash::{Stash, StashKey, Stashed};
 
 /// The error message used when an audited write runs outside an audit scope.
@@ -45,7 +45,7 @@ pub struct RequestMetadata {
 /// job acting for nobody carries `None`, and only an HTTP request carries
 /// [`RequestMetadata`].
 pub struct AuditContext {
-    user_id: Option<Uuid>,
+    user_id: Option<AuditId>,
     request: Option<RequestMetadata>,
     stash: Mutex<Stash>,
 }
@@ -55,12 +55,12 @@ impl AuditContext {
     ///
     /// `None` means "nobody in particular": the change is still audited, it is
     /// just not attributed to a user.
-    pub fn new(user_id: Option<Uuid>) -> Self {
+    pub fn new(user_id: Option<AuditId>) -> Self {
         Self::with_request(user_id, None)
     }
 
     /// A context for `user_id` with the request it came from.
-    pub fn with_request(user_id: Option<Uuid>, request: Option<RequestMetadata>) -> Self {
+    pub fn with_request(user_id: Option<AuditId>, request: Option<RequestMetadata>) -> Self {
         Self {
             user_id,
             request,
@@ -69,8 +69,8 @@ impl AuditContext {
     }
 
     /// The user making the change, if there is one.
-    pub fn user_id(&self) -> Option<Uuid> {
-        self.user_id
+    pub fn user_id(&self) -> Option<AuditId> {
+        self.user_id.clone()
     }
 
     /// The request the change came from, if it came from one.
@@ -113,7 +113,7 @@ impl std::fmt::Debug for AuditContext {
 /// // A background job acting for nobody.
 /// seaorm_auto_audit::scope(None, async { run_job().await }).await;
 /// ```
-pub async fn scope<F>(user_id: Option<Uuid>, fut: F) -> F::Output
+pub async fn scope<F>(user_id: Option<AuditId>, fut: F) -> F::Output
 where
     F: Future,
 {
@@ -127,7 +127,7 @@ where
 /// request metadata means "not from a request", which is what the audit row
 /// records as three NULL columns.
 pub async fn scope_with_request<F>(
-    user_id: Option<Uuid>,
+    user_id: Option<AuditId>,
     request: Option<RequestMetadata>,
     fut: F,
 ) -> F::Output
@@ -142,7 +142,7 @@ where
 /// The user making the change in the current scope, if there is one.
 ///
 /// Returns `None` outside a scope and for machine-made changes.
-pub fn current_user_id() -> Option<Uuid> {
+pub fn current_user_id() -> Option<AuditId> {
     ACTOR.try_with(|ctx| ctx.user_id()).unwrap_or(None)
 }
 
@@ -150,9 +150,7 @@ pub fn current_user_id() -> Option<Uuid> {
 ///
 /// Returns `None` outside a scope and for machine-made changes.
 pub fn current_request_metadata() -> Option<RequestMetadata> {
-    ACTOR
-        .try_with(|ctx| ctx.request().cloned())
-        .unwrap_or(None)
+    ACTOR.try_with(|ctx| ctx.request().cloned()).unwrap_or(None)
 }
 
 /// Run `f` against the active context.

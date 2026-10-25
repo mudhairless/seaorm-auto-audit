@@ -14,8 +14,8 @@ use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::get;
 use common::{ActiveModel, insert_bindings};
-use seaorm_auto_audit::middleware::{Actor, ClientIp};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbBackend, MockDatabase, MockExecResult};
+use seaorm_auto_audit::middleware::{Actor, ClientIp};
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -61,7 +61,7 @@ async fn the_actor_of_the_request_reaches_the_audit_row() {
         .with_state(db.clone());
 
     let mut request = Request::builder().uri("/").body(Body::empty()).unwrap();
-    request.extensions_mut().insert(Actor(actor));
+    request.extensions_mut().insert(Actor::new(actor));
 
     let response = app
         .oneshot(request)
@@ -73,7 +73,7 @@ async fn the_actor_of_the_request_reaches_the_audit_row() {
     let body = String::from_utf8(body.to_vec()).expect("the body should be text");
 
     assert!(
-        body.contains(&format!("Some({actor})")),
+        body.contains(&actor.to_string()),
         "the handler should see the actor, got: {body}"
     );
 
@@ -81,7 +81,10 @@ async fn the_actor_of_the_request_reaches_the_audit_row() {
     let statement = log.last().unwrap().statements().last().unwrap();
     let bindings = insert_bindings(statement);
 
-    assert_eq!(bindings["updated_by_id"], sea_orm::Value::Uuid(Some(actor)));
+    assert_eq!(
+        bindings["updated_by_id"],
+        sea_orm::Value::String(Some(actor.to_string()))
+    );
     assert_eq!(
         bindings["action"],
         sea_orm::Value::String(Some("create".to_owned()))
@@ -123,7 +126,7 @@ async fn a_request_without_an_actor_is_still_audited() {
     let bindings = insert_bindings(statement);
 
     // The change is audited; it is just not attributed to anybody.
-    assert_eq!(bindings["updated_by_id"], sea_orm::Value::Uuid(None));
+    assert_eq!(bindings["updated_by_id"], sea_orm::Value::String(None));
 }
 
 #[tokio::test]
@@ -147,7 +150,7 @@ async fn the_layer_order_puts_the_actor_in_the_scope() {
         .layer(middleware::from_fn(move |mut req: Request, next: Next| {
             let actor = actor;
             async move {
-                req.extensions_mut().insert(Actor(actor));
+                req.extensions_mut().insert(Actor::new(actor));
                 next.run(req).await
             }
         }))
@@ -164,7 +167,7 @@ async fn the_layer_order_puts_the_actor_in_the_scope() {
     let body = String::from_utf8(body.to_vec()).expect("the body should be text");
 
     assert!(
-        body.contains(&format!("Some({actor})")),
+        body.contains(&actor.to_string()),
         "the handler should see the actor, got: {body}"
     );
 
@@ -172,7 +175,10 @@ async fn the_layer_order_puts_the_actor_in_the_scope() {
     let statement = log.last().unwrap().statements().last().unwrap();
     let bindings = insert_bindings(statement);
 
-    assert_eq!(bindings["updated_by_id"], sea_orm::Value::Uuid(Some(actor)));
+    assert_eq!(
+        bindings["updated_by_id"],
+        sea_orm::Value::String(Some(actor.to_string()))
+    );
 }
 
 #[tokio::test]
@@ -245,8 +251,9 @@ async fn the_middleware_can_resolve_the_actor_itself() {
             .headers()
             .get("x-actor")
             .and_then(|value| value.to_str().ok())
-            .and_then(|value| Uuid::parse_str(value).ok());
-        seaorm_auto_audit::middleware::scope_request(req, next, |_| actor).await
+            .and_then(|value| Uuid::parse_str(value).ok())
+            .map(Into::into);
+        seaorm_auto_audit::middleware::scope_request(req, next, |_| actor.clone()).await
     }
 
     let app = Router::new()
@@ -270,5 +277,8 @@ async fn the_middleware_can_resolve_the_actor_itself() {
     let statement = log.last().unwrap().statements().last().unwrap();
     let bindings = insert_bindings(statement);
 
-    assert_eq!(bindings["updated_by_id"], sea_orm::Value::Uuid(Some(actor)));
+    assert_eq!(
+        bindings["updated_by_id"],
+        sea_orm::Value::String(Some(actor.to_string()))
+    );
 }

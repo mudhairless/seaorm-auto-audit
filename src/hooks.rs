@@ -26,11 +26,11 @@ use sea_orm::{
 };
 use serde::Serialize;
 use serde_json::Value as Json;
-use uuid::Uuid;
 
 use crate::auditable::Auditable;
 use crate::audits;
 use crate::context::with_context;
+use crate::id::AuditId;
 use crate::record::{AuditAction, AuditRecord};
 use crate::redact;
 use crate::stash::{StashKey, Stashed, to_json};
@@ -212,7 +212,7 @@ where
 /// Fails when there is no scope, before the caller touches the database.
 pub(crate) fn build_record(
     table: &str,
-    id: Uuid,
+    id: AuditId,
     action: AuditAction,
     before: Option<Json>,
     after: Option<Json>,
@@ -247,14 +247,14 @@ where
     C: ConnectionTrait,
 {
     let row = audits::ActiveModel {
-        id: Set(Uuid::new_v4()),
+        id: Set(uuid::Uuid::now_v7()),
         created_at: Set(chrono::Utc::now().fixed_offset()),
         auditable_table: Set(record.table),
-        auditable_id: Set(record.id),
+        auditable_id: Set(record.id.into_string()),
         action: Set(record.action.as_str().to_owned()),
         before_content: Set(record.before_content),
         after_content: Set(record.after_content),
-        updated_by_id: Set(record.updated_by_id),
+        updated_by_id: Set(record.updated_by_id.map(AuditId::into_string)),
         ip_address: Set(record.ip_address),
         url: Set(record.url),
         user_agent: Set(record.user_agent),

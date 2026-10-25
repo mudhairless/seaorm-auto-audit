@@ -3,7 +3,8 @@
 use std::fmt;
 
 use serde_json::Value as Json;
-use uuid::Uuid;
+
+use crate::id::AuditId;
 
 /// What happened to an audited row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -67,7 +68,7 @@ pub struct AuditRecord {
     /// The table of the audited row.
     pub table: String,
     /// The primary key of the audited row.
-    pub id: Uuid,
+    pub id: AuditId,
     /// What happened.
     pub action: AuditAction,
     /// The audited row before the change. `None` for creates.
@@ -75,7 +76,7 @@ pub struct AuditRecord {
     /// The audited row after the change. `None` for deletes.
     pub after_content: Option<Json>,
     /// The user who made the change. `None` for machine-made changes.
-    pub updated_by_id: Option<Uuid>,
+    pub updated_by_id: Option<AuditId>,
     /// The client address of the request. `None` for machine-made changes.
     pub ip_address: Option<String>,
     /// The URL of the request. `None` for machine-made changes.
@@ -100,10 +101,10 @@ impl AuditRecord {
     /// record.after_content = Some(after);
     /// record.updated_by_id = seaorm_auto_audit::current_user_id();
     /// ```
-    pub fn new(table: impl Into<String>, id: Uuid, action: AuditAction) -> Self {
+    pub fn new(table: impl Into<String>, id: impl Into<AuditId>, action: AuditAction) -> Self {
         Self {
             table: table.into(),
-            id,
+            id: id.into(),
             action,
             before_content: None,
             after_content: None,
@@ -115,7 +116,10 @@ impl AuditRecord {
     }
 
     /// Fill the request details from an ambient context, if there is one.
-    pub(crate) fn with_request_metadata(mut self, request: Option<&crate::RequestMetadata>) -> Self {
+    pub(crate) fn with_request_metadata(
+        mut self,
+        request: Option<&crate::RequestMetadata>,
+    ) -> Self {
         if let Some(request) = request {
             self.ip_address = request.ip_address.clone();
             self.url = request.url.clone();

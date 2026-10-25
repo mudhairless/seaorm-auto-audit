@@ -29,25 +29,29 @@
 
 use std::collections::HashMap;
 
-use sea_orm::{
-    ColumnTrait, Condition, ConnectionTrait, DbErr, DeleteResult, EntityTrait, IntoActiveModel,
-    Iterable, ModelTrait, PrimaryKeyToColumn, PrimaryKeyTrait, QueryFilter, UpdateResult,
-};
 use sea_orm::sea_query::IntoValueTuple;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, DbErr, DeleteResult,
+    EntityTrait, IntoActiveModel, Iterable, ModelTrait, PrimaryKeyToColumn, PrimaryKeyTrait,
+    QueryFilter, UpdateResult, Value,
+};
 use serde::Serialize;
-use uuid::Uuid;
 
 use crate::auditable::Auditable;
 use crate::context::with_context;
 use crate::hooks::{build_record, write_record};
+use crate::id::AuditId;
 use crate::record::AuditAction;
 use crate::redact;
 use crate::stash::to_json;
 
 /// Insert many rows and write one `create` audit row for each.
 ///
-/// The rows are read back in the same statement (`RETURNING`), so the audit
-/// row holds what the database actually stored.
+/// The rows are read back after the insert, so the audit row holds what the
+/// database actually stored. Backends with `RETURNING` (Postgres, SQLite) get
+/// the rows in the insert statement; MySQL does not support that, so every
+/// model must carry an explicit primary key and the rows are selected back by
+/// it.
 pub async fn insert_many<E, C, I>(db: &C, models: I) -> Result<Vec<E::Model>, DbErr>
 where
     E: Auditable,
@@ -57,7 +61,21 @@ where
 {
     with_context(|_| ())?;
 
-    let inserted = E::insert_many(models).exec_with_returning(db).await?;
+    let models: Vec<E::ActiveModel> = models.into_iter().collect();
+    let keys = explicit_keys::<E>(&models)?;
+
+    let inserted = if db.get_database_backend() == DbBackend::MySql {
+        let Some(keys) = keys else {
+            return Err(DbErr::Custom(format!(
+                "seaorm-auto-audit: MySQL cannot generate primary keys for `{}` inside                  `insert_many` — set the primary key on every model, or insert them one at a                  time inside an audit scope",
+                E::default().table_name()
+            )));
+        };
+        E::insert_many(models).exec(db).await?;
+        select_by_key_values::<E, C>(db, &keys).await?
+    } else {
+        E::insert_many(models).exec_with_returning(db).await?
+    };
 
     for model in &inserted {
         let mut after = to_json::<E>(model)?;
@@ -100,7 +118,7 @@ where
         return Ok(result);
     }
 
-    let mut after_by_id: HashMap<Uuid, E::Model> =
+    let mut after_by_id: HashMap<AuditId, E::Model> =
         select_by_primary_keys::<E, C>(db, &before_models)
             .await?
             .into_iter()
@@ -187,7 +205,9 @@ where
 }
 
 /// A condition matching the primary key carried by `value`.
-fn primary_key_condition<E>(value: <E::PrimaryKey as PrimaryKeyTrait>::ValueType) -> Result<Condition, DbErr>
+fn primary_key_condition<E>(
+    value: <E::PrimaryKey as PrimaryKeyTrait>::ValueType,
+) -> Result<Condition, DbErr>
 where
     E: EntityTrait,
 {
@@ -205,6 +225,44 @@ where
     }
 
     Ok(condition)
+}
+
+/// The primary key values of every model, or `None` when any model leaves a
+/// key to the database.
+fn explicit_keys<E>(models: &[E::ActiveModel]) -> Result<Option<Vec<Vec<Value>>>, DbErr>
+where
+    E: EntityTrait,
+{
+    let mut keys = Vec::with_capacity(models.len());
+    for am in models {
+        let mut row = Vec::new();
+        for primary_key in <E::PrimaryKey as Iterable>::iter() {
+            match am.get(primary_key.into_column()).into_value() {
+                Some(value) => row.push(value),
+                None => return Ok(None),
+            }
+        }
+        keys.push(row);
+    }
+    Ok(Some(keys))
+}
+
+/// The rows with the given primary key values.
+async fn select_by_key_values<E, C>(db: &C, keys: &[Vec<Value>]) -> Result<Vec<E::Model>, DbErr>
+where
+    E: EntityTrait,
+    C: ConnectionTrait,
+{
+    let mut condition = Condition::any();
+    for values in keys {
+        let mut row = Condition::all();
+        for (primary_key, value) in <E::PrimaryKey as Iterable>::iter().zip(values.iter()) {
+            row = row.add(primary_key.into_column().eq(value.clone()));
+        }
+        condition = condition.add(row);
+    }
+
+    E::find().filter(condition).all(db).await
 }
 
 /// The rows of `models`, read back by primary key.

@@ -1,26 +1,29 @@
 //! The audit trail against a real SQLite.
 //!
-//! These tests need a database. They run only when `SQLITE_DATABASE_URL` points at
-//! one or use a file path, and are skipped otherwise.
+//! These tests always run: without `SQLITE_DATABASE_URL` they use a temporary
+//! file, so the suite does not need a database server.
 
 mod common;
 
+use std::sync::OnceLock;
+
 use common::ActiveModel;
-use seaorm_auto_audit::{
-    Audits, RequestMetadata, delete_by_id as audited_delete_by_id,
-    delete_many as audited_delete_many, insert_many as audited_insert_many, scope,
-    scope_with_request, update_many as audited_update_many,
-};
 use sea_orm::{
     ActiveModelTrait,
     ActiveValue::{NotSet, Set, Unchanged},
     ColumnTrait, Condition, ConnectionTrait, Database, DatabaseConnection, EntityTrait,
     QueryFilter, TransactionTrait,
 };
+use seaorm_auto_audit::{
+    Audits, RequestMetadata, delete_by_id as audited_delete_by_id,
+    delete_many as audited_delete_many, insert_many as audited_insert_many, scope,
+    scope_with_request, update_many as audited_update_many,
+};
 use serde_json::json;
 use tokio::sync::OnceCell;
 use uuid::Uuid;
 
+/// The DDL of the audited table.
 const USERS_DDL: &str = r#"
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
@@ -31,12 +34,37 @@ CREATE TABLE IF NOT EXISTS users (
 );
 "#;
 
+/// The DDL of the audit table, the same file the crate ships.
 const AUDITS_DDL: &str = include_str!("../sql/setup.sqlite.sql");
 
+/// The schema is created once per test run.
 static SETUP: OnceCell<()> = OnceCell::const_new();
 
+/// A file-backed temporary database.
+///
+/// Every connection to `sqlite::memory:` is a separate database, so the
+/// schema created on the first connection would be invisible to the rest.
+/// A temp file keeps every connection on the same database and is removed
+/// when the process ends.
+static TEMP: OnceLock<tempfile::NamedTempFile> = OnceLock::new();
+
+fn database_url() -> String {
+    if let Ok(url) = std::env::var("SQLITE_DATABASE_URL") {
+        return url;
+    }
+    let file = TEMP.get_or_init(|| {
+        tempfile::Builder::new()
+            .prefix("seaorm-auto-audit-")
+            .suffix(".sqlite")
+            .tempfile()
+            .expect("the temporary database should be creatable")
+    });
+    format!("sqlite://{}", file.path().display())
+}
+
+/// A connection to the test database, with the schema in place.
 async fn database() -> Option<DatabaseConnection> {
-    let url = std::env::var("SQLITE_DATABASE_URL").unwrap_or_else(|_| "sqlite::memory:".to_string());
+    let url = database_url();
     let db = Database::connect(&url)
         .await
         .expect("the test database should be reachable");
@@ -51,6 +79,7 @@ async fn database() -> Option<DatabaseConnection> {
     Some(db)
 }
 
+/// Run a DDL script, statement by statement.
 async fn apply(db: &DatabaseConnection, ddl: &str) {
     let script = ddl
         .lines()
@@ -69,52 +98,13 @@ async fn apply(db: &DatabaseConnection, ddl: &str) {
     }
 }
 
+/// The audit rows of one row of the audited table.
 async fn audits_of(db: &DatabaseConnection, id: Uuid) -> Vec<seaorm_auto_audit::audits::Model> {
     Audits::find()
-        .filter(seaorm_auto_audit::audits::Column::AuditableId.eq(id))
+        .filter(seaorm_auto_audit::audits::Column::AuditableId.eq(id.to_string()))
         .all(db)
         .await
         .expect("the audit rows should be readable")
 }
 
-#[tokio::test]
-async fn a_write_is_audited_in_a_real_database() {
-    let Some(db) = database().await else {
-        return;
-    };
-    let id = Uuid::new_v4();
-    let actor = Uuid::new_v4();
-
-    let txn = db.begin().await.expect("the transaction should start");
-    scope(Some(actor), async {
-        ActiveModel {
-            id: Set(id),
-            name: Set("Ada".to_owned()),
-            email: Set(Some("ada@example.com".to_owned())),
-            password_hash: Set(Some("hash-before".to_owned())),
-            age: Set(36),
-        }
-        .insert(&txn)
-        .await
-        .expect("the insert should succeed");
-    })
-    .await;
-    txn.commit().await.expect("the transaction should commit");
-
-    let audits = audits_of(&db, id).await;
-    assert_eq!(audits.len(), 1, "one audit row per write");
-
-    let audit = &audits[0];
-    assert_eq!(audit.auditable_table, "users");
-    assert_eq!(audit.auditable_id, id);
-    assert_eq!(audit.action, "create");
-    assert_eq!(audit.updated_by_id, Some(actor));
-    assert!(audit.before_content.is_none(), "a create has no before");
-
-    let after = audit.after_content.as_ref().expect("an after");
-    assert_eq!(after["name"], json!("Ada"));
-    assert!(
-        after.get("password_hash").is_none(),
-        "the credential is never stored: {after}"
-    );
-}
+include!("common/real_database_suite.rs");

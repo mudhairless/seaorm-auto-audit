@@ -2,7 +2,8 @@
 
 use sea_orm::{DbErr, EntityTrait, ModelTrait, Value};
 use serde::Serialize;
-use uuid::Uuid;
+
+use crate::id::AuditId;
 
 /// A model whose creates, updates and deletes are recorded in the `audits`
 /// table.
@@ -33,15 +34,17 @@ where
 
     /// The identifier of a row, as stored in `audits.auditable_id`.
     ///
-    /// The default reads the row's primary key, which must be a single `uuid`.
-    /// Override it for tables with another kind of key.
-    fn audit_id(model: &Self::Model) -> Result<Uuid, DbErr> {
+    /// The default reads a single-column primary key of any common scalar type
+    /// — `uuid`, integer or string — and stores its canonical text form. See
+    /// [`AuditId`]. Override it for composite keys or any key type not covered
+    /// by [`AuditId::from_value`].
+    fn audit_id(model: &Self::Model) -> Result<AuditId, DbErr> {
         let values: Vec<Value> = model.get_primary_key_value().iter().cloned().collect();
         match values.as_slice() {
-            [Value::Uuid(Some(id))] => Ok(*id),
+            [value] => AuditId::from_value(value),
             _ => Err(DbErr::Custom(format!(
-                "seaorm-auto-audit: `{}` needs a single uuid primary key for `auditable_id` — \
-                 override `Auditable::audit_id` to map another key",
+                "seaorm-auto-audit: `{}` has a composite primary key — override \
+                 `Auditable::audit_id` to combine its columns",
                 Self::default().table_name()
             ))),
         }
