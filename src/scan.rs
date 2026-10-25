@@ -249,15 +249,14 @@ fn strip_comments_and_strings(source: &str) -> String {
         }
 
         // Raw string: `r"..."`, `r#"..."#`, `r##"..."##`.
-        if current == 'r' {
-            if let Some(hashes) = raw_string_hashes(&chars, index) {
+        if current == 'r'
+            && let Some(hashes) = raw_string_hashes(&chars, index) {
                 let start = index + 1 + hashes;
                 let end = raw_string_end(&chars, start, hashes);
                 out.push_str(&blank(&chars[index..end]));
                 index = end;
                 continue;
             }
-        }
 
         // Normal string.
         if current == '"' {
@@ -276,13 +275,12 @@ fn strip_comments_and_strings(source: &str) -> String {
         }
 
         // Character literal, but not a lifetime (`'a`).
-        if current == '\'' {
-            if let Some(end) = char_literal_end(&chars, index) {
+        if current == '\''
+            && let Some(end) = char_literal_end(&chars, index) {
                 out.push_str(&blank(&chars[index..end]));
                 index = end;
                 continue;
             }
-        }
 
         out.push(current);
         index += 1;
