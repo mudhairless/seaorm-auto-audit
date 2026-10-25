@@ -42,9 +42,9 @@ jobs:
         run: cargo check --no-default-features
 
       # Builds every test target. The Postgres and MySQL suites skip at
-      # runtime without their database URLs; the SQLite suite runs against
-      # an in-memory database. The database suites run for real in their
-      # own jobs below.
+      # runtime without their database URLs; their own jobs below run
+      # them for real. The SQLite suite always runs here, against a
+      # temporary file-backed database.
       - name: Test
         run: cargo test --all-features
 
