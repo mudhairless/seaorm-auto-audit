@@ -290,3 +290,61 @@ fn the_binary_needs_something_to_scan() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("usage:"), "{stderr}");
 }
+
+#[test]
+fn the_binary_prints_usage_for_help() {
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_seaorm-auto-audit-check"))
+        .arg("--help")
+        .output()
+        .expect("the checker should run");
+
+    assert_eq!(output.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("usage:"), "{stdout}");
+}
+
+#[test]
+fn the_binary_rejects_an_unknown_option() {
+    let directory = TempDir::new().expect("a temporary directory");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_seaorm-auto-audit-check"))
+        .arg("--bogus")
+        .arg(directory.path())
+        .output()
+        .expect("the checker should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("unknown option `--bogus`"), "{stderr}");
+}
+
+#[test]
+fn the_binary_rejects_allow_without_a_path() {
+    let directory = TempDir::new().expect("a temporary directory");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_seaorm-auto-audit-check"))
+        .arg(directory.path())
+        .arg("--allow")
+        .output()
+        .expect("the checker should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--allow needs a path"), "{stderr}");
+}
+
+#[test]
+fn the_binary_allow_exempts_a_path() {
+    let directory = TempDir::new().expect("a temporary directory");
+    let file = directory.path().join("audit.rs");
+    fs::write(&file, "users::Entity::insert(am).exec(db);").expect("the source file");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_seaorm-auto-audit-check"))
+        .arg(directory.path())
+        .arg("--allow")
+        .arg(&file)
+        .output()
+        .expect("the checker should run");
+
+    assert_eq!(output.status.code(), Some(0), "the only write is exempt");
+}
