@@ -359,8 +359,10 @@ task-local actor and request metadata (including the "no user", "no scope" and
 "no request" flows), the redaction rules, and the coverage checker.
 
 The full real-database suite runs against each backend, once for a `uuid`
-primary key, once for an integer key and once for a string key. Postgres and
-MySQL are skipped when their URL is unset; SQLite always runs:
+primary key, once for an integer key and once for a string key, and once for
+an unsigned integer key on MySQL only: the SQLite and Postgres drivers cannot
+bind a `u64`, so a u64-keyed table cannot be written through them at all.
+Postgres and MySQL are skipped when their URL is unset; SQLite always runs:
 
 | backend  | variable              | example                                          |
 |----------|-----------------------|--------------------------------------------------|
