@@ -55,6 +55,9 @@ impl AuditId {
             Value::SmallInt(Some(id)) => Ok(Self(id.to_string())),
             Value::TinyInt(Some(id)) => Ok(Self(id.to_string())),
             Value::Unsigned(Some(id)) => Ok(Self(id.to_string())),
+            Value::TinyUnsigned(Some(id)) => Ok(Self(id.to_string())),
+            Value::SmallUnsigned(Some(id)) => Ok(Self(id.to_string())),
+            Value::BigUnsigned(Some(id)) => Ok(Self(id.to_string())),
             other => Err(DbErr::Custom(format!(
                 "seaorm-auto-audit: cannot use {other:?} as an audit id — override \
                  `Auditable::audit_id` to map this key"

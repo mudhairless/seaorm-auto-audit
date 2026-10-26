@@ -33,6 +33,35 @@ fn widget(id: i64) -> Model {
     }
 }
 
+mod gadgets {
+    use sea_orm::entity::prelude::*;
+    use serde::{Deserialize, Serialize};
+
+    /// A table whose primary key is a `u64`, which SeaORM exposes as
+    /// `Value::BigUnsigned` rather than `Value::BigInt`.
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "gadgets")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: u64,
+        pub name: String,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    seaorm_auto_audit::impl_audit_hooks!(Entity, ActiveModel);
+
+    impl seaorm_auto_audit::Auditable for Entity {}
+}
+
+fn gadget(id: u64) -> gadgets::Model {
+    gadgets::Model {
+        id,
+        name: "Cog".to_owned(),
+    }
+}
+
 #[tokio::test]
 async fn an_integer_key_is_stored_as_text_in_the_audit_row() {
     let id = 7_i64;
@@ -74,6 +103,47 @@ async fn an_integer_key_is_stored_as_text_in_the_audit_row() {
     let after = json_of(&bindings["after_content"]);
     assert_eq!(after["id"], serde_json::json!(7));
     assert_eq!(after["name"], serde_json::json!("Sprocket"));
+}
+
+#[tokio::test]
+async fn a_u64_key_is_stored_as_text_in_the_audit_row() {
+    let id = 7_u64;
+    let db = MockDatabase::new(DbBackend::Postgres)
+        .append_query_results([[gadget(id)]])
+        .append_exec_results([MockExecResult {
+            rows_affected: 1,
+            ..Default::default()
+        }])
+        .into_connection();
+
+    scope(None, async {
+        gadgets::ActiveModel {
+            id: Set(id),
+            name: Set("Cog".to_owned()),
+        }
+        .insert(&db)
+        .await
+        .expect("the insert should succeed");
+    })
+    .await;
+
+    let log = db.into_transaction_log();
+    let statement = log.last().unwrap().statements().last().unwrap();
+    let bindings = insert_bindings(statement);
+
+    assert_eq!(
+        bindings["auditable_id"],
+        Value::String(Some("7".to_owned())),
+        "the u64 key is stored in its text form"
+    );
+    assert_eq!(
+        bindings["auditable_table"],
+        Value::String(Some("gadgets".to_owned()))
+    );
+
+    let after = json_of(&bindings["after_content"]);
+    assert_eq!(after["id"], serde_json::json!(7));
+    assert_eq!(after["name"], serde_json::json!("Cog"));
 }
 
 #[tokio::test]
@@ -123,6 +193,14 @@ fn audit_ids_convert_from_the_common_key_types() {
     assert_eq!(AuditId::from("widget-7".to_owned()).as_str(), "widget-7");
 
     let from_value = AuditId::from_value(&Value::BigInt(Some(7))).unwrap();
+    assert_eq!(from_value.as_str(), "7");
+    let from_value = AuditId::from_value(&Value::TinyUnsigned(Some(7))).unwrap();
+    assert_eq!(from_value.as_str(), "7");
+    let from_value = AuditId::from_value(&Value::SmallUnsigned(Some(7))).unwrap();
+    assert_eq!(from_value.as_str(), "7");
+    let from_value = AuditId::from_value(&Value::Unsigned(Some(7))).unwrap();
+    assert_eq!(from_value.as_str(), "7");
+    let from_value = AuditId::from_value(&Value::BigUnsigned(Some(7))).unwrap();
     assert_eq!(from_value.as_str(), "7");
     let from_value = AuditId::from_value(&Value::String(Some("widget-7".to_owned()))).unwrap();
     assert_eq!(from_value.as_str(), "widget-7");
