@@ -23,6 +23,8 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 
+impl sea_orm::ActiveModelBehavior for ActiveModel {}
+
 impl Auditable for Entity {}
 
 #[test]
