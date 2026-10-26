@@ -55,6 +55,25 @@ fn it_finds_insert_many() {
 }
 
 #[test]
+fn it_allows_the_audited_bulk_wrappers() {
+    let source = r#"
+        let txn = db.begin().await?;
+
+        seaorm_auto_audit::insert_many::<users::Entity, _, _>(&txn, models).await?;
+        seaorm_auto_audit::update_many::<users::Entity, _>(&txn, filter, values).await?;
+        seaorm_auto_audit::delete_many::<users::Entity, _>(&txn, filter).await?;
+        seaorm_auto_audit::delete_by_id::<users::Entity, _, _>(&txn, id).await?;
+
+        txn.commit().await?;
+    "#;
+
+    assert!(
+        scan(source).is_empty(),
+        "the audited wrappers are the sanctioned bulk writes"
+    );
+}
+
+#[test]
 fn it_ignores_comments() {
     let source = r#"
         // users::Entity::insert(am).exec(db).await;

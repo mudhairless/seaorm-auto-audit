@@ -21,7 +21,7 @@
 //! | `am.save(db)`                      | `Entity::insert_many(..)`          |
 //! | `am.delete(db)`                    | `Entity::update_many()`            |
 //! | nested `builder().save()`          | `Entity::delete_many()`            |
-//! |                                    | `delete_by_id`                     |
+//! |                                    | `Entity::delete_by_id`             |
 //! |                                    | `update_without_returning`         |
 //!
 //! Comments and string literals are blanked before matching, so documenting the
@@ -36,7 +36,7 @@ pub const FORBIDDEN_PATTERNS: &[&str] = &[
     "Entity::update(",
     "Entity::update_many",
     "Entity::delete_many",
-    "delete_by_id",
+    "Entity::delete_by_id",
     "update_without_returning",
 ];
 

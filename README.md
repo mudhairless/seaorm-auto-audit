@@ -255,7 +255,7 @@ audited table written that way leaves no audit trail.
 | `am.save(db)`                      | `Entity::insert_many(..)`          |
 | `am.delete(db)`                    | `Entity::update_many()`            |
 | nested `builder().save()`          | `Entity::delete_many()`            |
-|                                    | `delete_by_id`                     |
+|                                    | `Entity::delete_by_id`             |
 |                                    | `update_without_returning`         |
 
 Two extra edges: `update_without_returning` runs `before_save` but not
