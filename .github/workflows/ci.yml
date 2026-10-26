@@ -48,6 +48,19 @@ jobs:
       - name: Test
         run: cargo test --all-features
 
+      # Informational only: the report lands in this job's log for manual
+      # review. continue-on-error keeps a tooling problem (or a future
+      # coverage dip) from ever failing the build; there is deliberately
+      # no --fail-under threshold.
+      - name: Install coverage tooling
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Coverage report
+        continue-on-error: true
+        run: |
+          rustup component add llvm-tools-preview
+          cargo llvm-cov --all-features --ignore-filename-regex 'library/std'
+
       - name: Docs
         env:
           RUSTDOCFLAGS: -D warnings
