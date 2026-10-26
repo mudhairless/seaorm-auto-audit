@@ -59,7 +59,7 @@ jobs:
         continue-on-error: true
         run: |
           rustup component add llvm-tools-preview
-          cargo llvm-cov --all-features --ignore-filename-regex 'library/std'
+          cargo llvm-cov --all-features --show-missing-lines --ignore-filename-regex 'library/std'
 
       - name: Docs
         env:
@@ -122,7 +122,7 @@ jobs:
         continue-on-error: true
         run: |
           rustup component add llvm-tools-preview
-          cargo llvm-cov --all-features --test postgres --ignore-filename-regex 'library/std'
+          cargo llvm-cov --all-features --test postgres --show-missing-lines --ignore-filename-regex 'library/std'
 
   mysql:
     name: MySQL integration
@@ -166,4 +166,4 @@ jobs:
         continue-on-error: true
         run: |
           rustup component add llvm-tools-preview
-          cargo llvm-cov --all-features --test mysql --ignore-filename-regex 'library/std'
+          cargo llvm-cov --all-features --test mysql --show-missing-lines --ignore-filename-regex 'library/std'
