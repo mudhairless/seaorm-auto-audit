@@ -961,3 +961,47 @@ async fn a_write_without_a_primary_key_names_the_problem() {
         "expected the missing-key error, got: {error}"
     );
 }
+
+#[tokio::test]
+async fn an_update_of_a_row_that_is_already_gone_writes_no_audit_row() {
+    // The before-read finds nothing, so the stash parks Missing. The update
+    // itself then fails the way SeaORM reports a missing row, before any
+    // audit row could be written.
+    let id = Uuid::new_v4();
+
+    let db = MockDatabase::new(DbBackend::Postgres)
+        // the `SELECT` in `before_save` finds nothing
+        .append_query_results([Vec::<common::Model>::new()])
+        // the `UPDATE ... RETURNING` finds nothing either
+        .append_query_results([Vec::<common::Model>::new()])
+        .into_connection();
+
+    let result = scope(Some(Uuid::new_v4().into()), async {
+        ActiveModel {
+            id: Unchanged(id),
+            name: Set("Grace".to_owned()),
+            email: NotSet,
+            password_hash: NotSet,
+            age: NotSet,
+        }
+        .update(&db)
+        .await
+    })
+    .await;
+
+    let Err(error) = result else {
+        panic!("expected the update of a missing row to fail");
+    };
+    assert!(
+        error.to_string().contains("records are updated"),
+        "expected SeaORM's no-records-updated error, got: {error}"
+    );
+
+    let log = db.into_transaction_log();
+    assert_eq!(log.len(), 2, "the read and the attempted update");
+    let audited = log
+        .iter()
+        .flat_map(|transaction| transaction.statements().iter())
+        .any(|statement| statement.sql.contains("audits"));
+    assert!(!audited, "no audit row for a row that was not there");
+}

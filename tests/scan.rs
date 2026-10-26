@@ -440,3 +440,53 @@ fn the_binary_allow_exempts_a_path() {
 
     assert_eq!(output.status.code(), Some(0), "the only write is exempt");
 }
+
+#[test]
+fn it_scans_a_single_rust_file() {
+    let directory = TempDir::new().expect("a temporary directory");
+    let file = directory.path().join("users.rs");
+    fs::write(&file, "users::Entity::insert(am).exec(db);").expect("the source file");
+
+    let violations = Checker::new().scan(&file);
+
+    assert_eq!(violations.len(), 1);
+    assert!(violations[0].path.ends_with("users.rs"));
+}
+
+#[test]
+fn it_scans_nothing_for_a_path_that_does_not_exist() {
+    let directory = TempDir::new().expect("a temporary directory");
+    let missing = directory.path().join("no_such_dir");
+
+    assert!(Checker::new().scan(&missing).is_empty());
+}
+
+#[test]
+fn it_keeps_line_numbers_across_a_multiline_block_comment() {
+    let source = "/* a comment\n/* nested */ users::Entity::insert(am);\nstill a comment */\nusers::Entity::update(am).exec(db);";
+
+    let checker = Checker::new();
+    let violations = checker.scan_source(Path::new("src/users.rs"), source);
+
+    // The insert is inside the outer comment; the update is on line 4,
+    // which only lands right if the comment's newlines are preserved.
+    assert_eq!(violations.len(), 1);
+    assert_eq!(violations[0].pattern, "Entity::update(");
+    assert_eq!(violations[0].line, 4);
+}
+
+#[test]
+fn it_treats_an_unterminated_raw_string_as_blank_to_the_end() {
+    let source = "let s = r#\"users::Entity::insert(am);";
+
+    assert!(scan(source).is_empty());
+}
+
+#[test]
+fn a_string_cut_off_by_a_newline_ends_there() {
+    // The scanner ends a string at the newline, so what follows on the
+    // next line is code again, and the call site counts.
+    let source = "let s = \"abc\nusers::Entity::insert(am).exec(db);";
+
+    assert_eq!(scan(source), vec!["Entity::insert("]);
+}
