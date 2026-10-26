@@ -881,3 +881,83 @@ async fn write_records_with_no_records_runs_no_statement() {
 
     assert!(db.into_transaction_log().is_empty());
 }
+
+#[tokio::test]
+async fn update_many_records_a_delete_for_a_row_that_vanishes_mid_update() {
+    // The before-read sees the row and the update reports success, but the
+    // read-back by primary key finds nothing: the row stopped existing as
+    // part of the update (a trigger, a cascade, a racing delete). The audit
+    // trail records what was there, as a delete.
+    let id = Uuid::new_v4();
+
+    let db = MockDatabase::new(DbBackend::Postgres)
+        // the before-read
+        .append_query_results([[user(id)]])
+        // the read-back, after the update: the row is gone
+        .append_query_results([Vec::<common::Model>::new()])
+        .append_exec_results([
+            MockExecResult {
+                rows_affected: 1,
+                ..Default::default()
+            },
+            MockExecResult {
+                rows_affected: 1,
+                ..Default::default()
+            },
+        ])
+        .into_connection();
+
+    let values = ActiveModel {
+        id: NotSet,
+        name: Set("Grace".to_owned()),
+        email: NotSet,
+        password_hash: NotSet,
+        age: NotSet,
+    };
+
+    scope(None, async {
+        seaorm_auto_audit::update_many::<Entity, _>(&db, sea_orm::Condition::all(), values)
+            .await
+            .expect("the bulk update should succeed");
+    })
+    .await;
+
+    let log = db.into_transaction_log();
+    let bindings = insert_bindings(&audit_statement(&log));
+    assert_eq!(bindings["action"], Value::String(Some("delete".to_owned())));
+    assert_eq!(
+        bindings["auditable_id"],
+        Value::String(Some(id.to_string()))
+    );
+    assert_eq!(bindings["after_content"], Value::Json(None));
+
+    let before = json_of(&bindings["before_content"]);
+    assert_eq!(before["name"], json!("Ada"));
+    assert!(before.get("password_hash").is_none());
+}
+
+#[tokio::test]
+async fn a_write_without_a_primary_key_names_the_problem() {
+    let db = MockDatabase::new(DbBackend::Postgres).into_connection();
+
+    let am = ActiveModel {
+        id: NotSet,
+        name: Set("Ada".to_owned()),
+        email: NotSet,
+        password_hash: NotSet,
+        age: NotSet,
+    };
+
+    let error = scope(Some(Uuid::new_v4().into()), async {
+        before_save::<Entity, _>(am, &db, false).await
+    })
+    .await
+    .expect_err("a write without a primary key must fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("was written without a primary key"),
+        "expected the missing-key error, got: {error}"
+    );
+}

@@ -442,6 +442,63 @@ macro_rules! real_database_suite {
             }
 
             #[tokio::test]
+            async fn update_many_matching_nothing_writes_no_audit_rows() {
+                let Some(db) = database().await else {
+                    return;
+                };
+                let missing = new_key();
+                let actor = new_key();
+
+                let txn = db.begin().await.expect("the transaction should start");
+                let result = scope(Some(actor.into()), async {
+                    let filter = Condition::all().add(Column::Id.eq(missing.clone()));
+                    let values = ActiveModel {
+                        id: NotSet,
+                        name: Set("Grace".to_owned()),
+                        email: NotSet,
+                        password_hash: NotSet,
+                        age: NotSet,
+                    };
+                    audited_update_many::<Entity, _>(&txn, filter, values)
+                        .await
+                        .expect("an update matching nothing should succeed")
+                })
+                .await;
+                txn.commit().await.expect("the transaction should commit");
+
+                assert_eq!(result.rows_affected, 0);
+                assert!(
+                    audits_of(&db, &missing).await.is_empty(),
+                    "no audit rows for an update that matched nothing"
+                );
+            }
+
+            #[tokio::test]
+            async fn delete_many_matching_nothing_writes_no_audit_rows() {
+                let Some(db) = database().await else {
+                    return;
+                };
+                let missing = new_key();
+                let actor = new_key();
+
+                let txn = db.begin().await.expect("the transaction should start");
+                let result = scope(Some(actor.into()), async {
+                    let filter = Condition::all().add(Column::Id.eq(missing.clone()));
+                    audited_delete_many::<Entity, _>(&txn, filter)
+                        .await
+                        .expect("a delete matching nothing should succeed")
+                })
+                .await;
+                txn.commit().await.expect("the transaction should commit");
+
+                assert_eq!(result.rows_affected, 0);
+                assert!(
+                    audits_of(&db, &missing).await.is_empty(),
+                    "no audit rows for a delete that matched nothing"
+                );
+            }
+
+            #[tokio::test]
             async fn delete_by_id_is_audited() {
                 let Some(db) = database().await else {
                     return;
