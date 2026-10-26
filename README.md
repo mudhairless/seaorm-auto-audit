@@ -341,8 +341,9 @@ insert path repeated on Postgres, MySQL and SQLite, plus the bulk wrappers, the
 task-local actor and request metadata (including the "no user", "no scope" and
 "no request" flows), the redaction rules, and the coverage checker.
 
-The full real-database suite runs against each backend. Postgres and MySQL are
-skipped when their URL is unset; SQLite always runs:
+The full real-database suite runs against each backend, once for a `uuid`
+primary key, once for an integer key and once for a string key. Postgres and
+MySQL are skipped when their URL is unset; SQLite always runs:
 
 | backend  | variable              | example                                          |
 |----------|-----------------------|--------------------------------------------------|

@@ -12,29 +12,42 @@
 
 mod common;
 
-use common::ActiveModel;
 use sea_orm::{
-    ActiveModelTrait,
-    ActiveValue::{NotSet, Set, Unchanged},
-    ColumnTrait, Condition, ConnectionTrait, Database, DatabaseConnection, EntityTrait,
-    QueryFilter, TransactionTrait,
+    ColumnTrait, ConnectionTrait, Database, DatabaseConnection, EntityTrait, QueryFilter,
 };
-use seaorm_auto_audit::{
-    Audits, RequestMetadata, delete_by_id as audited_delete_by_id,
-    delete_many as audited_delete_many, insert_many as audited_insert_many, scope,
-    scope_with_request, update_many as audited_update_many,
-};
-use serde_json::json;
+use seaorm_auto_audit::Audits;
 use tokio::sync::OnceCell;
 use uuid::Uuid;
 
-/// The DDL of the audited table.
+/// The DDL of the uuid-keyed audited table.
 ///
 /// SeaORM binds a `uuid` to MySQL as its 16-byte form, so the column is
 /// `BINARY(16)` rather than `CHAR(36)`.
 const USERS_DDL: &str = r#"
 CREATE TABLE IF NOT EXISTS users (
     id BINARY(16) PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT,
+    password_hash TEXT,
+    age INTEGER NOT NULL
+);
+"#;
+
+/// The DDL of the integer-keyed audited table.
+const INTEGER_USERS_DDL: &str = r#"
+CREATE TABLE IF NOT EXISTS integer_users (
+    id BIGINT PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT,
+    password_hash TEXT,
+    age INTEGER NOT NULL
+);
+"#;
+
+/// The DDL of the string-keyed audited table.
+const STRING_USERS_DDL: &str = r#"
+CREATE TABLE IF NOT EXISTS string_users (
+    id VARCHAR(255) PRIMARY KEY,
     name TEXT NOT NULL,
     email TEXT,
     password_hash TEXT,
@@ -60,6 +73,8 @@ async fn database() -> Option<DatabaseConnection> {
     SETUP
         .get_or_init(|| async {
             apply(&db, USERS_DDL).await;
+            apply(&db, INTEGER_USERS_DDL).await;
+            apply(&db, STRING_USERS_DDL).await;
             apply(&db, AUDITS_DDL).await;
         })
         .await;
@@ -87,7 +102,10 @@ async fn apply(db: &DatabaseConnection, ddl: &str) {
 }
 
 /// The audit rows of one row of the audited table.
-async fn audits_of(db: &DatabaseConnection, id: Uuid) -> Vec<seaorm_auto_audit::audits::Model> {
+async fn audits_of<D: std::fmt::Display>(
+    db: &DatabaseConnection,
+    id: &D,
+) -> Vec<seaorm_auto_audit::audits::Model> {
     Audits::find()
         .filter(seaorm_auto_audit::audits::Column::AuditableId.eq(id.to_string()))
         .all(db)
@@ -95,4 +113,6 @@ async fn audits_of(db: &DatabaseConnection, id: Uuid) -> Vec<seaorm_auto_audit::
         .expect("the audit rows should be readable")
 }
 
-include!("common/real_database_suite.rs");
+common::real_database_suite!(uuid_keys, common::Entity, Uuid);
+common::real_database_suite!(integer_keys, common::integer_key::Entity, i64);
+common::real_database_suite!(string_keys, common::string_key::Entity, String);
