@@ -143,3 +143,14 @@ fn several_columns_are_handled_one_by_one() {
     // The public half of the key stays: it identifies the key.
     assert_eq!(before["key_prefix"], json!("ftg_"));
 }
+
+#[test]
+fn a_column_in_neither_snapshot_is_left_alone() {
+    let mut before = json!({"name": "Ada"});
+    let mut after = json!({"name": "Grace"});
+
+    reconcile(&mut before, &mut after, &["password_hash"]);
+
+    assert_eq!(before, json!({"name": "Ada"}));
+    assert_eq!(after, json!({"name": "Grace"}));
+}
