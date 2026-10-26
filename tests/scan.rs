@@ -334,6 +334,21 @@ fn the_binary_rejects_allow_without_a_path() {
 }
 
 #[test]
+fn the_binary_rejects_a_path_that_does_not_exist() {
+    let directory = TempDir::new().expect("a temporary directory");
+    let missing = directory.path().join("no_such_dir");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_seaorm-auto-audit-check"))
+        .arg(&missing)
+        .output()
+        .expect("the checker should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("does not exist"), "{stderr}");
+}
+
+#[test]
 fn the_binary_allow_exempts_a_path() {
     let directory = TempDir::new().expect("a temporary directory");
     let file = directory.path().join("audit.rs");

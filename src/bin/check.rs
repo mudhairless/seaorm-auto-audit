@@ -52,6 +52,16 @@ fn main() -> ExitCode {
         return ExitCode::from(2);
     }
 
+    // A root that does not exist scans as zero files and zero violations,
+    // which would pass a gate while checking nothing. Refuse it the way
+    // "nothing to scan" is refused above.
+    for root in &roots {
+        if !root.exists() {
+            eprintln!("error: `{}` does not exist\n{USAGE}", root.display());
+            return ExitCode::from(2);
+        }
+    }
+
     let mut violations = Vec::new();
     for root in &roots {
         violations.extend(checker.scan(root));
