@@ -451,7 +451,22 @@ macro_rules! real_database_suite {
 
                 let txn = db.begin().await.expect("the transaction should start");
                 let result = scope(Some(actor.into()), async {
-                    let filter = Condition::all().add(Column::Id.eq(missing.clone()));
+                                        // Seed a row first: on SQLite a transaction that reads
+                    // before it writes cannot always upgrade its lock while
+                    // other suites are writing, so the write comes first, the
+                    // same shape the matching-row tests use.
+                    ActiveModel {
+                        id: Set(new_key()),
+                        name: Set("Ada".to_owned()),
+                        email: Set(None),
+                        password_hash: Set(None),
+                        age: Set(36),
+                    }
+                    .insert(&txn)
+                    .await
+                    .expect("the seed insert should succeed");
+
+let filter = Condition::all().add(Column::Id.eq(missing.clone()));
                     let values = ActiveModel {
                         id: NotSet,
                         name: Set("Grace".to_owned()),
@@ -484,7 +499,20 @@ macro_rules! real_database_suite {
                 let txn = db.begin().await.expect("the transaction should start");
                 let result = scope(Some(actor.into()), async {
                     let filter = Condition::all().add(Column::Id.eq(missing.clone()));
-                    audited_delete_many::<Entity, _>(&txn, filter)
+                                        // Seed a row first, for the SQLite lock reason the
+                    // matching-nothing update test describes.
+                    ActiveModel {
+                        id: Set(new_key()),
+                        name: Set("Ada".to_owned()),
+                        email: Set(None),
+                        password_hash: Set(None),
+                        age: Set(36),
+                    }
+                    .insert(&txn)
+                    .await
+                    .expect("the seed insert should succeed");
+
+audited_delete_many::<Entity, _>(&txn, filter)
                         .await
                         .expect("a delete matching nothing should succeed")
                 })
