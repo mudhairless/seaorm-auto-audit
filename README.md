@@ -1,3 +1,6 @@
+[![CI](https://github.com/mudhairless/seaorm-auto-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/mudhairless/seaorm-auto-audit/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/mudhairless/seaorm-auto-audit/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/mudhairless/seaorm-auto-audit/actions/workflows/github-code-scanning/codeql)
+
 # seaorm-auto-audit
 
 Automatic audit trails for [SeaORM](https://www.sea-ql.org/SeaORM/) entities.
@@ -71,7 +74,7 @@ and are still audited.
 `auditable_id` and `updated_by_id` are stored as text rather than a fixed
 column type. That lets one audit table cover tables whose keys are `uuid`,
 integer or string, and lets the acting user be any of those. The crate's
-[`AuditId`](https://docs.rs/seaorm-auto-audit/latest/seaorm_auto_audit/struct.AuditId.html)
+[`AuditId`](https://docs.rs/seaorm-auto-audit/latest/seaorm_auto_audit/id/struct.AuditId.html)
 carries the identifier and converts it to its canonical text form. Audit row
 ids are generated as UUIDv7, so they sort by creation time.
 
