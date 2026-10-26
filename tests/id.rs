@@ -263,7 +263,7 @@ fn audit_ids_compare_and_order_as_their_text() {
 
     // Ordering is the text ordering the docs promise: "10" before "2".
     assert!(AuditId::from(10_i64) < AuditId::from(2_i64));
-    let mut ids = vec![
+    let mut ids = [
         AuditId::from(2_i64),
         AuditId::from(10_i64),
         AuditId::from(1_i64),
