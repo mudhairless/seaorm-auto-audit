@@ -1,5 +1,7 @@
 [![CI](https://github.com/mudhairless/seaorm-auto-audit/actions/workflows/ci.yml/badge.svg)](https://github.com/mudhairless/seaorm-auto-audit/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/mudhairless/seaorm-auto-audit/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/mudhairless/seaorm-auto-audit/actions/workflows/github-code-scanning/codeql)
+[![crates.io](https://img.shields.io/crates/v/seaorm-auto-audit.svg)](https://crates.io/crates/seaorm-auto-audit)
+[![docs.rs](https://img.shields.io/docsrs/seaorm-auto-audit)](https://docs.rs/seaorm-auto-audit)
 
 # seaorm-auto-audit
 
@@ -24,6 +26,17 @@ seaorm_auto_audit::impl_audit_hooks!(users::Entity, users::ActiveModel);
 // 3. the request carries the actor
 seaorm_auto_audit::scope(Some(user_id.into()), handler(req)).await;
 ```
+
+## Install
+
+```toml
+seaorm-auto-audit = "0.4"
+
+# with the axum middleware helpers:
+seaorm-auto-audit = { version = "0.4", features = ["axum"] }
+```
+
+Requires SeaORM 2.0 and Rust 1.94.0 or later.
 
 ## How it works
 
@@ -70,6 +83,39 @@ with any SeaORM-supported database:
 The request columns and `updated_by_id` are nullable: non-HTTP writes
 (background jobs, webhooks) have neither a session nor a request behind them,
 and are still audited.
+
+One row of the trail, for an update in which the user changed their email
+address and their password:
+
+```json
+{
+  "id": "019a2f4c-7b1e-7f3a-9c2d-5e6f7a8b9c0d",
+  "created_at": "2026-10-26T19:03:11.412Z",
+  "auditable_table": "users",
+  "auditable_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "action": "update",
+  "before_content": {
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "name": "Grace Hopper",
+    "email": "grace@old.example",
+    "password_hash": "[redacted]"
+  },
+  "after_content": {
+    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+    "name": "Grace Hopper",
+    "email": "grace@new.example",
+    "password_hash": "[redacted]"
+  },
+  "updated_by_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "ip_address": "203.0.113.7",
+  "url": "https://app.example.com/users/9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "user_agent": "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0"
+}
+```
+
+The password changed, so both snapshots carry the `"[redacted]"` marker and
+no hash appears anywhere in the row. Had it not changed, the column would be
+absent from both snapshots instead. The rules are in [Redaction](#redaction).
 
 `auditable_id` and `updated_by_id` are stored as text rather than a fixed
 column type. That lets one audit table cover tables whose keys are `uuid`,
