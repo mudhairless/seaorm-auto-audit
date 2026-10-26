@@ -108,6 +108,83 @@ fn it_ignores_lifetimes_and_character_literals() {
 }
 
 #[test]
+fn it_ignores_byte_strings() {
+    let source = r#"let blob = b"users::Entity::insert(am).exec(db).await";"#;
+
+    assert!(scan(source).is_empty(), "byte strings are not call sites");
+}
+
+#[test]
+fn it_ignores_nested_block_comments() {
+    // Rust block comments nest: the call is still inside the comment
+    // after the first `*/`.
+    let source = "/* outer /* users::Entity::insert(am); */ still a comment */";
+
+    assert!(
+        scan(source).is_empty(),
+        "nested comments are not call sites"
+    );
+}
+
+#[test]
+fn it_ignores_an_escaped_quote_inside_a_string() {
+    // The `\"` does not end the string, so the insert is still inside
+    // it; the update after the string is a real call site.
+    let source =
+        r#"let s = "a \" users::Entity::insert(am) b"; users::Entity::update(am).exec(db);"#;
+
+    assert_eq!(scan(source), vec!["Entity::update("]);
+}
+
+#[test]
+fn it_treats_an_unterminated_string_as_blank_to_the_end() {
+    let source = "let s = \"users::Entity::insert(am);";
+
+    assert!(scan(source).is_empty());
+}
+
+#[test]
+fn it_ignores_an_escaped_quote_character_literal() {
+    let source = r"let quote = '\''; users::Entity::insert(am).exec(db);";
+
+    assert_eq!(scan(source), vec!["Entity::insert("]);
+}
+
+#[test]
+fn the_default_checker_uses_the_builtin_patterns() {
+    let checker = Checker::default();
+    assert_eq!(checker.forbidden_patterns(), FORBIDDEN_PATTERNS);
+    assert!(checker.allowlist().is_empty());
+
+    let mut checker = Checker::default();
+    checker.allow("migrations");
+    assert_eq!(checker.allowlist().len(), 1);
+    assert!(checker.allowlist()[0].ends_with("migrations"));
+}
+
+#[test]
+fn it_scans_nothing_for_a_non_rust_file() {
+    let directory = TempDir::new().expect("a temporary directory");
+    let file = directory.path().join("notes.txt");
+    fs::write(&file, "users::Entity::insert(am);").expect("the file");
+
+    assert!(Checker::new().scan(&file).is_empty());
+}
+
+#[cfg(unix)]
+#[test]
+fn it_skips_a_file_it_cannot_read() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let directory = TempDir::new().expect("a temporary directory");
+    let file = directory.path().join("secret.rs");
+    fs::write(&file, "users::Entity::insert(am);").expect("the file");
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o000)).expect("the permissions");
+
+    assert!(Checker::new().scan(directory.path()).is_empty());
+}
+
+#[test]
 fn it_reports_the_line_of_the_call_site() {
     let source = "fn main() {\n    let x = 1;\n    users::Entity::insert(am).exec(db);\n}";
 
