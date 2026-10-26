@@ -112,6 +112,18 @@ jobs:
       - name: Postgres integration tests
         run: cargo test --all-features --test postgres
 
+      # Informational only, like the main job's report: this table shows
+      # the coverage this suite alone produces, which is where the
+      # Postgres-only branches become visible. Never fails the job.
+      - name: Install coverage tooling
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Coverage report
+        continue-on-error: true
+        run: |
+          rustup component add llvm-tools-preview
+          cargo llvm-cov --all-features --test postgres --ignore-filename-regex 'library/std'
+
   mysql:
     name: MySQL integration
     runs-on: ubuntu-latest
@@ -142,3 +154,16 @@ jobs:
 
       - name: MySQL integration tests
         run: cargo test --all-features --test mysql
+
+      # Informational only, like the main job's report: this table shows
+      # the coverage this suite alone produces, which is where the
+      # MySQL-only branches (explicit insert keys, the u64 suite) become
+      # visible. Never fails the job.
+      - name: Install coverage tooling
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Coverage report
+        continue-on-error: true
+        run: |
+          rustup component add llvm-tools-preview
+          cargo llvm-cov --all-features --test mysql --ignore-filename-regex 'library/std'
