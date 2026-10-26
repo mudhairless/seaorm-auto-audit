@@ -185,12 +185,15 @@ Only choose a header that the edge overwrites on every request, and install the
 source outside the audit scope so the middleware sees it. Without a configured
 source, an address the application already resolved into the crate's `ClientIp`
 request extension is used, and then the connection's peer address
-(`ConnectInfo`), which behind a proxy is the proxy's address.
+(`ConnectInfo`), which behind a proxy is the proxy's address. If a source is
+configured and its header is missing or not an address, the audit row records
+no address rather than falling back to the proxy's.
 
-The URL is built from the request URI and the request's `Host` header, with
-`http` as the fallback scheme. `X-Forwarded-Proto` and `X-Forwarded-Host` are
-not trusted either: forwarded headers are only as trustworthy as the proxy that
-sets them.
+The URL is built from the request URI and the request's `Host` header. Its
+scheme is the one the request arrived on, read from `X-Forwarded-Proto` when
+that header holds `http` or `https`, with `http` as the fallback when the
+request carries no scheme at all. `X-Forwarded-Host` is not used: the host
+comes from the `Host` header.
 
 `seaorm_auto_audit::current_user_id()` returns the acting user of the current scope as an
 `Option<AuditId>`, or `None` outside a scope and for machine-made changes.

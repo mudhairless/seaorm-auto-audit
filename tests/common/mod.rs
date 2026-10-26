@@ -2,9 +2,9 @@
 //!
 //! The auditable table is a small `users` table with a `uuid` primary key, a
 //! nullable `password_hash` (the credential column) and a couple of ordinary
-//! columns to look at. The [`integer_key`] and [`string_key`] modules hold the
-//! same table with those primary-key types, so the real-database suite can run
-//! against every identifier the crate supports.
+//! columns to look at. The [`integer_key`], [`unsigned_key`] and [`string_key`]
+//! modules hold the same table with those primary-key types, so the
+//! real-database suite can run against every identifier the crate supports.
 
 #![allow(dead_code)]
 
@@ -83,6 +83,37 @@ pub mod integer_key {
     }
 }
 
+/// The same audited table with an unsigned integer primary key.
+pub mod unsigned_key {
+    use sea_orm::entity::prelude::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
+    #[sea_orm(table_name = "unsigned_users")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: u64,
+        #[sea_orm(column_type = "Text")]
+        pub name: String,
+        #[sea_orm(column_type = "Text", nullable)]
+        pub email: Option<String>,
+        #[sea_orm(column_type = "Text", nullable)]
+        pub password_hash: Option<String>,
+        pub age: i32,
+    }
+
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+
+    seaorm_auto_audit::impl_audit_hooks!(Entity, ActiveModel);
+
+    impl seaorm_auto_audit::Auditable for Entity {
+        fn redacted_columns() -> &'static [&'static str] {
+            &["password_hash"]
+        }
+    }
+}
+
 /// The same audited table with a string primary key.
 pub mod string_key {
     use sea_orm::entity::prelude::*;
@@ -131,6 +162,15 @@ impl KeyFixture for Uuid {
 impl KeyFixture for i64 {
     fn new_key() -> Self {
         (Uuid::new_v4().as_u128() & i64::MAX as u128) as i64
+    }
+}
+
+impl KeyFixture for u64 {
+    fn new_key() -> Self {
+        // The full u64 range, values past the i64 maximum included: the
+        // unsigned suite exists to prove those keys work on a backend whose
+        // driver binds u64 (MySQL; see the backend test files).
+        Uuid::new_v4().as_u128() as u64
     }
 }
 

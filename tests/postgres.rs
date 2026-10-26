@@ -112,4 +112,8 @@ async fn audits_of<D: std::fmt::Display>(
 
 common::real_database_suite!(uuid_keys, common::Entity, Uuid);
 common::real_database_suite!(integer_keys, common::integer_key::Entity, i64);
+// No unsigned_keys suite in this file: Postgres has no unsigned 64-bit
+// integer type and sqlx-postgres has no u64 binding, so a u64-keyed table
+// cannot be written through this driver. The suite runs on MySQL, whose
+// driver binds u64 to BIGINT UNSIGNED.
 common::real_database_suite!(string_keys, common::string_key::Entity, String);

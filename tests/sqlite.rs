@@ -127,4 +127,8 @@ async fn audits_of<D: std::fmt::Display>(
 
 common::real_database_suite!(uuid_keys, common::Entity, Uuid);
 common::real_database_suite!(integer_keys, common::integer_key::Entity, i64);
+// No unsigned_keys suite in this file: sqlx-sqlite cannot bind a u64 at
+// all ("u64 unsupported by sqlx-sqlite"), so a u64-keyed table cannot be
+// written through this driver. The suite runs on MySQL, whose driver binds
+// u64 to BIGINT UNSIGNED.
 common::real_database_suite!(string_keys, common::string_key::Entity, String);

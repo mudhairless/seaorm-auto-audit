@@ -44,6 +44,17 @@ CREATE TABLE IF NOT EXISTS integer_users (
 );
 "#;
 
+/// The DDL of the unsigned-keyed audited table.
+const UNSIGNED_USERS_DDL: &str = r#"
+CREATE TABLE IF NOT EXISTS unsigned_users (
+    id BIGINT UNSIGNED PRIMARY KEY,
+    name TEXT NOT NULL,
+    email TEXT,
+    password_hash TEXT,
+    age INTEGER NOT NULL
+);
+"#;
+
 /// The DDL of the string-keyed audited table.
 const STRING_USERS_DDL: &str = r#"
 CREATE TABLE IF NOT EXISTS string_users (
@@ -74,6 +85,7 @@ async fn database() -> Option<DatabaseConnection> {
         .get_or_init(|| async {
             apply(&db, USERS_DDL).await;
             apply(&db, INTEGER_USERS_DDL).await;
+            apply(&db, UNSIGNED_USERS_DDL).await;
             apply(&db, STRING_USERS_DDL).await;
             apply(&db, AUDITS_DDL).await;
         })
@@ -115,4 +127,5 @@ async fn audits_of<D: std::fmt::Display>(
 
 common::real_database_suite!(uuid_keys, common::Entity, Uuid);
 common::real_database_suite!(integer_keys, common::integer_key::Entity, i64);
+common::real_database_suite!(unsigned_keys, common::unsigned_key::Entity, u64);
 common::real_database_suite!(string_keys, common::string_key::Entity, String);

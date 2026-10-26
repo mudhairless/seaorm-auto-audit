@@ -26,7 +26,9 @@
 //! own — a header is only as trustworthy as the proxy that sets it, so that
 //! call belongs to the application. Without a configured source, a [`ClientIp`]
 //! extension inserted by the application is used as a fallback, and then the
-//! connection's peer address ([`ConnectInfo`]).
+//! connection's peer address ([`ConnectInfo`]). If a source is configured and
+//! its header is missing or not an address, no address is recorded instead of
+//! falling back.
 
 use std::net::SocketAddr;
 
@@ -108,9 +110,24 @@ async fn metadata_of(req: Request) -> (RequestMetadata, Request) {
 
 /// The client address from the configured [`ClientIpSource`], then the local
 /// extension, then the peer address.
+///
+/// The fallbacks cover "no source configured" only. A configured source that
+/// fails to resolve records no address: the peer address in that case is the
+/// proxy's, and writing it as the client's would misstate the audit row.
 async fn client_ip(parts: &mut Parts) -> Option<String> {
-    if let Ok(ResolvedClientIp(ip)) = ResolvedClientIp::from_request_parts(parts, &()).await {
-        return Some(ip.to_string());
+    match ResolvedClientIp::from_request_parts(parts, &()).await {
+        Ok(ResolvedClientIp(ip)) => return Some(ip.to_string()),
+        Err(axum_client_ip::Rejection::NoClientIpSource) => {
+            // No source configured: resolve from the fallbacks below.
+        }
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                "seaorm-auto-audit: the configured ClientIpSource did not resolve \
+                 an address, recording none"
+            );
+            return None;
+        }
     }
 
     parts
@@ -147,8 +164,17 @@ fn absolute_url(uri: &Uri, headers: &HeaderMap) -> String {
         .and_then(|value| value.to_str().ok())
         .filter(|value| !value.is_empty());
 
+    // The scheme the request actually arrived on, as the edge reports it.
+    // `http` remains only as the fallback for a request that carries no
+    // scheme information at all.
+    let scheme = headers
+        .get("x-forwarded-proto")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| *value == "http" || *value == "https")
+        .unwrap_or("http");
+
     match host {
-        Some(host) => format!("http://{host}{uri}"),
+        Some(host) => format!("{scheme}://{host}{uri}"),
         None => uri.to_string(),
     }
 }

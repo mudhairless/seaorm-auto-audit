@@ -226,12 +226,13 @@ async fn the_request_details_reach_the_audit_row() {
         bindings["ip_address"],
         sea_orm::Value::String(Some("203.0.113.7".to_owned()))
     );
-    // Forwarded host and proto headers are not trusted: the URL comes from
-    // the request's own Host header and the http fallback.
+    // The scheme is the one the request arrived on, from x-forwarded-proto.
+    // The host still comes from the request's own Host header, never from
+    // x-forwarded-host.
     assert_eq!(
         bindings["url"],
         sea_orm::Value::String(Some(
-            "http://api.example.com/things/42?tab=history".to_owned()
+            "https://api.example.com/things/42?tab=history".to_owned()
         ))
     );
     assert_eq!(
@@ -315,6 +316,82 @@ async fn the_peer_address_is_the_last_resort() {
         bindings["ip_address"],
         sea_orm::Value::String(Some("203.0.113.7".to_owned()))
     );
+}
+
+#[tokio::test]
+async fn a_configured_source_with_no_header_records_no_address() {
+    let db = MockDatabase::new(DbBackend::Postgres)
+        .append_query_results([[common::user(Uuid::nil())]])
+        .append_exec_results([MockExecResult {
+            rows_affected: 1,
+            ..Default::default()
+        }])
+        .into_connection();
+
+    let app = Router::new()
+        .route("/", get(handler))
+        .layer(middleware::from_fn(audit_scope))
+        .layer(ClientIpSource::XRealIp.into_extension())
+        .with_state(db.clone());
+
+    let mut request = Request::builder().uri("/").body(Body::empty()).unwrap();
+    // Even with a peer address available, a configured source that did not
+    // resolve must not be replaced by the proxy's address.
+    request
+        .extensions_mut()
+        .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+            [203, 0, 113, 7],
+            4000,
+        ))));
+
+    let response = app
+        .oneshot(request)
+        .await
+        .expect("the request should succeed");
+
+    assert!(response.status().is_success());
+
+    let log = db.into_transaction_log();
+    let statement = log.last().unwrap().statements().last().unwrap();
+    let bindings = insert_bindings(statement);
+
+    assert_eq!(bindings["ip_address"], sea_orm::Value::String(None));
+}
+
+#[tokio::test]
+async fn a_configured_source_with_an_invalid_header_records_no_address() {
+    let db = MockDatabase::new(DbBackend::Postgres)
+        .append_query_results([[common::user(Uuid::nil())]])
+        .append_exec_results([MockExecResult {
+            rows_affected: 1,
+            ..Default::default()
+        }])
+        .into_connection();
+
+    let app = Router::new()
+        .route("/", get(handler))
+        .layer(middleware::from_fn(audit_scope))
+        .layer(ClientIpSource::XRealIp.into_extension())
+        .with_state(db.clone());
+
+    let request = Request::builder()
+        .uri("/")
+        .header("x-real-ip", "not-an-ip")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app
+        .oneshot(request)
+        .await
+        .expect("the request should succeed");
+
+    assert!(response.status().is_success());
+
+    let log = db.into_transaction_log();
+    let statement = log.last().unwrap().statements().last().unwrap();
+    let bindings = insert_bindings(statement);
+
+    assert_eq!(bindings["ip_address"], sea_orm::Value::String(None));
 }
 
 #[tokio::test]
