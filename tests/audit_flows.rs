@@ -807,3 +807,77 @@ async fn insert_many_writes_its_audit_rows_in_one_statement() {
         .count();
     assert_eq!(audit_inserts, 1, "one audit statement for the whole batch");
 }
+
+#[tokio::test]
+async fn a_delete_of_a_row_that_is_already_gone_writes_no_audit_row() {
+    let id = Uuid::new_v4();
+
+    let db = MockDatabase::new(DbBackend::Postgres)
+        // the `SELECT` in `before_delete` finds nothing
+        .append_query_results([Vec::<common::Model>::new()])
+        .append_exec_results([MockExecResult {
+            rows_affected: 0,
+            ..Default::default()
+        }])
+        .into_connection();
+
+    scope(Some(Uuid::new_v4().into()), async {
+        let result = ActiveModel {
+            id: Unchanged(id),
+            name: NotSet,
+            email: NotSet,
+            password_hash: NotSet,
+            age: NotSet,
+        }
+        .delete(&db)
+        .await
+        .expect("deleting a missing row is not an error");
+        assert_eq!(result.rows_affected, 0);
+    })
+    .await;
+
+    let log = db.into_transaction_log();
+    assert_eq!(log.len(), 2, "the read and the delete, nothing else");
+    let audited = log
+        .iter()
+        .flat_map(|transaction| transaction.statements().iter())
+        .any(|statement| statement.sql.contains("audits"));
+    assert!(!audited, "no audit row for a row that was not there");
+}
+
+#[tokio::test]
+async fn after_delete_without_before_delete_names_the_missing_step() {
+    let db = MockDatabase::new(DbBackend::Postgres).into_connection();
+
+    let am = ActiveModel {
+        id: Unchanged(Uuid::new_v4()),
+        name: NotSet,
+        email: NotSet,
+        password_hash: NotSet,
+        age: NotSet,
+    };
+
+    let error = scope(Some(Uuid::new_v4().into()), async {
+        seaorm_auto_audit::after_delete::<Entity, _>(am, &db).await
+    })
+    .await
+    .expect_err("after_delete without before_delete must fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("did not go through `seaorm_auto_audit::before_delete`"),
+        "expected the missing-step error, got: {error}"
+    );
+}
+
+#[tokio::test]
+async fn write_records_with_no_records_runs_no_statement() {
+    let db = MockDatabase::new(DbBackend::Postgres).into_connection();
+
+    seaorm_auto_audit::write_records(&db, &[])
+        .await
+        .expect("writing no records should succeed");
+
+    assert!(db.into_transaction_log().is_empty());
+}
