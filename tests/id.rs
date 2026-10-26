@@ -214,3 +214,62 @@ fn an_unsupported_value_is_rejected_with_an_explanation() {
         AuditId::from_value(&Value::Bool(Some(true))).expect_err("a boolean is not an identifier");
     assert!(error.to_string().contains("override `Auditable::audit_id`"));
 }
+
+#[test]
+fn audit_ids_convert_from_the_rest_of_the_key_types() {
+    let uuid = uuid::Uuid::now_v7();
+
+    assert_eq!(AuditId::from(&uuid).as_str(), uuid.to_string());
+    assert_eq!(AuditId::from(7_i8).as_str(), "7");
+    assert_eq!(AuditId::from(7_i16).as_str(), "7");
+    assert_eq!(AuditId::from(7_isize).as_str(), "7");
+    assert_eq!(AuditId::from(7_u8).as_str(), "7");
+    assert_eq!(AuditId::from(7_u16).as_str(), "7");
+    assert_eq!(AuditId::from(7_u32).as_str(), "7");
+    assert_eq!(AuditId::from(7_usize).as_str(), "7");
+
+    let from_value = AuditId::from_value(&Value::Int(Some(7))).unwrap();
+    assert_eq!(from_value.as_str(), "7");
+    let from_value = AuditId::from_value(&Value::SmallInt(Some(7))).unwrap();
+    assert_eq!(from_value.as_str(), "7");
+    let from_value = AuditId::from_value(&Value::TinyInt(Some(7))).unwrap();
+    assert_eq!(from_value.as_str(), "7");
+}
+
+#[test]
+fn a_missing_value_is_not_an_identifier() {
+    assert!(AuditId::from_value(&Value::BigInt(None)).is_err());
+    assert!(AuditId::from_value(&Value::String(None)).is_err());
+    assert!(AuditId::from_value(&Value::Uuid(None)).is_err());
+}
+
+#[test]
+fn audit_ids_compare_and_order_as_their_text() {
+    let uuid = uuid::Uuid::now_v7();
+    let id = AuditId::from(uuid);
+
+    // The four PartialEq impls: against &str, str and Uuid, from both sides.
+    let text = uuid.to_string();
+    assert!(id == text.as_str());
+    assert!(id == *text.as_str());
+    assert!(id == uuid);
+    assert!(uuid == id);
+    assert!(id != uuid::Uuid::now_v7());
+
+    // Display and the conversions back out carry the same text.
+    assert_eq!(id.to_string(), text);
+    assert_eq!(String::from(id.clone()), text);
+    assert_eq!(id.clone().into_string(), text);
+
+    // Ordering is the text ordering the docs promise: "10" before "2".
+    assert!(AuditId::from(10_i64) < AuditId::from(2_i64));
+    let mut ids = vec![AuditId::from(2_i64), AuditId::from(10_i64), AuditId::from(1_i64)];
+    ids.sort();
+    let ordered: Vec<&str> = ids.iter().map(AuditId::as_str).collect();
+    assert_eq!(ordered, ["1", "10", "2"]);
+
+    // The id hashes as its text, so it can key a map by value.
+    let mut set = std::collections::HashSet::new();
+    set.insert(AuditId::from(7_i64));
+    assert!(set.contains(&AuditId::from(7_i64)));
+}
