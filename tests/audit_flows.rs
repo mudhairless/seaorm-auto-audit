@@ -683,3 +683,127 @@ async fn an_insert_writes_one_audit_row_on_every_backend() {
         );
     }
 }
+
+#[tokio::test]
+async fn update_many_refuses_to_change_a_primary_key() {
+    let db = MockDatabase::new(DbBackend::Postgres).into_connection();
+
+    let values = ActiveModel {
+        id: Set(Uuid::new_v4()),
+        name: Set("Grace".to_owned()),
+        email: NotSet,
+        password_hash: NotSet,
+        age: NotSet,
+    };
+
+    let result = scope(Some(Uuid::new_v4().into()), async {
+        seaorm_auto_audit::update_many::<Entity, _>(&db, sea_orm::Condition::all(), values).await
+    })
+    .await;
+
+    let Err(DbErr::Custom(message)) = result else {
+        panic!("expected the primary key guard to refuse the update");
+    };
+    assert!(
+        message.contains("cannot change the primary key"),
+        "expected the guard's error, got: {message}"
+    );
+
+    let log = db.into_transaction_log();
+    assert!(log.is_empty(), "the guard fires before any statement runs");
+}
+
+#[tokio::test]
+async fn insert_many_on_mysql_without_keys_names_the_problem() {
+    let db = MockDatabase::new(DbBackend::MySql).into_connection();
+
+    let model = ActiveModel {
+        id: NotSet,
+        name: Set("Ada".to_owned()),
+        email: Set(None),
+        password_hash: Set(None),
+        age: Set(36),
+    };
+
+    let result = scope(None, async {
+        seaorm_auto_audit::insert_many::<Entity, _, _>(&db, [model]).await
+    })
+    .await;
+
+    let Err(DbErr::Custom(message)) = result else {
+        panic!("expected the missing-key error");
+    };
+    assert_eq!(
+        message,
+        "seaorm-auto-audit: MySQL cannot generate primary keys for `users` inside \
+         `insert_many` — set the primary key on every model, or insert them one at a \
+         time inside an audit scope"
+    );
+
+    let log = db.into_transaction_log();
+    assert!(log.is_empty(), "the error fires before any statement runs");
+}
+
+#[tokio::test]
+async fn insert_many_with_no_models_is_a_no_op() {
+    for backend in [DbBackend::Postgres, DbBackend::MySql] {
+        let db = MockDatabase::new(backend).into_connection();
+
+        let inserted = scope(None, async {
+            seaorm_auto_audit::insert_many::<Entity, _, _>(&db, Vec::<ActiveModel>::new()).await
+        })
+        .await
+        .expect("an empty insert should succeed");
+
+        assert!(inserted.is_empty(), "{backend:?}");
+        assert!(
+            db.into_transaction_log().is_empty(),
+            "no statement should run on {backend:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn insert_many_writes_its_audit_rows_in_one_statement() {
+    let ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
+    let rows: Vec<_> = ids.iter().map(|id| user(*id)).collect();
+    let db = MockDatabase::new(DbBackend::Postgres)
+        .append_query_results([rows.clone(), rows])
+        .append_exec_results([
+            MockExecResult {
+                rows_affected: 3,
+                ..Default::default()
+            },
+            MockExecResult {
+                rows_affected: 3,
+                ..Default::default()
+            },
+        ])
+        .into_connection();
+
+    let models: Vec<ActiveModel> = ids
+        .iter()
+        .map(|id| ActiveModel {
+            id: Set(*id),
+            name: Set("Ada".to_owned()),
+            email: Set(None),
+            password_hash: Set(None),
+            age: Set(36),
+        })
+        .collect();
+
+    scope(None, async {
+        seaorm_auto_audit::insert_many::<Entity, _, _>(&db, models)
+            .await
+            .expect("the bulk insert should succeed");
+    })
+    .await;
+
+    let log = db.into_transaction_log();
+    let audit_inserts = log
+        .iter()
+        .flat_map(|transaction| transaction.statements().iter())
+        .filter(|statement| statement.sql.contains("audits"))
+        .count();
+    assert_eq!(audit_inserts, 1, "one audit statement for the whole batch");
+}

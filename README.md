@@ -317,7 +317,9 @@ txn.commit().await?;
 
 The wrappers do not invent their own transaction: run them inside the caller's
 transaction, so the writes and their audit rows commit or roll back together.
-They also require an audit scope, exactly like the hooks.
+They also require an audit scope, exactly like the hooks. `update_many`
+cannot change a row's primary key: a `values` model that sets a key column is
+rejected, because the trail is keyed by the row's existing key.
 
 `insert_many` needs the inserted rows to write their `create` audit rows. On
 Postgres and SQLite it reads them back with `RETURNING`. MySQL has no

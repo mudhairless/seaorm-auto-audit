@@ -246,26 +246,52 @@ pub async fn write_record<C>(db: &C, record: AuditRecord) -> Result<(), DbErr>
 where
     C: ConnectionTrait,
 {
-    let row = audits::ActiveModel {
-        id: Set(uuid::Uuid::now_v7()),
-        created_at: Set(chrono::Utc::now().fixed_offset()),
-        auditable_table: Set(record.table),
-        auditable_id: Set(record.id.into_string()),
-        action: Set(record.action.as_str().to_owned()),
-        before_content: Set(record.before_content),
-        after_content: Set(record.after_content),
-        updated_by_id: Set(record.updated_by_id.map(AuditId::into_string)),
-        ip_address: Set(record.ip_address),
-        url: Set(record.url),
-        user_agent: Set(record.user_agent),
-    };
     // No `RETURNING`: the inserted row is not needed, and asking for it would
     // cost a round trip on every audited write.
-    audits::Entity::insert(row)
+    audits::Entity::insert(audit_row(&record))
         .exec_without_returning(db)
         .await?;
 
     Ok(())
+}
+
+/// Write a batch of audit rows in one statement.
+///
+/// The bulk wrappers use this: a batch touching N rows costs one audit
+/// statement instead of N round trips. An empty batch writes nothing. The
+/// rows go through the same connection handle as the writes they describe,
+/// exactly as with [`write_record`].
+pub async fn write_records<C>(db: &C, records: &[AuditRecord]) -> Result<(), DbErr>
+where
+    C: ConnectionTrait,
+{
+    if records.is_empty() {
+        return Ok(());
+    }
+
+    let rows = records.iter().map(audit_row).collect::<Vec<_>>();
+    audits::Entity::insert_many(rows)
+        .exec_without_returning(db)
+        .await?;
+
+    Ok(())
+}
+
+/// The `audits` row of one record.
+fn audit_row(record: &AuditRecord) -> audits::ActiveModel {
+    audits::ActiveModel {
+        id: Set(uuid::Uuid::now_v7()),
+        created_at: Set(chrono::Utc::now().fixed_offset()),
+        auditable_table: Set(record.table.clone()),
+        auditable_id: Set(record.id.clone().into_string()),
+        action: Set(record.action.as_str().to_owned()),
+        before_content: Set(record.before_content.clone()),
+        after_content: Set(record.after_content.clone()),
+        updated_by_id: Set(record.updated_by_id.clone().map(AuditId::into_string)),
+        ip_address: Set(record.ip_address.clone()),
+        url: Set(record.url.clone()),
+        user_agent: Set(record.user_agent.clone()),
+    }
 }
 
 /// Read the current row of an active model.

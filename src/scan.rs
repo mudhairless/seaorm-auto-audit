@@ -184,10 +184,20 @@ fn source_files(root: &Path) -> Vec<PathBuf> {
         return files;
     };
     for entry in entries.flatten() {
+        // The entry's own type, which does not follow symlinks. A symlinked
+        // directory is skipped rather than walked: a link pointing back at
+        // an ancestor would otherwise recurse until the stack overflows,
+        // and a link out of the tree would scan files nobody named.
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_symlink() {
+            continue;
+        }
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if path.is_dir() {
+        if file_type.is_dir() {
             if name.starts_with('.') || name == "target" || name == "node_modules" {
                 continue;
             }

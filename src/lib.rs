@@ -84,7 +84,9 @@ pub use context::{
     AuditContext, NO_SCOPE, RequestMetadata, current_request_metadata, current_user_id, scope,
     scope_with_request,
 };
-pub use hooks::{after_delete, after_save, before_delete, before_save, write_record};
+pub use hooks::{
+    after_delete, after_save, before_delete, before_save, write_record, write_records,
+};
 pub use id::AuditId;
 pub use record::{AuditAction, AuditRecord, UnknownAction};
 pub use redact::REDACTED;

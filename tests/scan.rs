@@ -166,6 +166,19 @@ fn it_skips_target_and_hidden_directories() {
     assert!(Checker::new().scan(directory.path()).is_empty());
 }
 
+#[cfg(unix)]
+#[test]
+fn it_does_not_follow_symlinks() {
+    let directory = TempDir::new().expect("a temporary directory");
+    fs::write(directory.path().join("main.rs"), "fn main() {}").expect("the source file");
+    // A link back at the directory itself. Following it would recurse
+    // forever, so this test completing at all is half the assertion.
+    std::os::unix::fs::symlink(directory.path(), directory.path().join("again"))
+        .expect("the symlink");
+
+    assert!(Checker::new().scan(directory.path()).is_empty());
+}
+
 #[test]
 fn it_exempts_a_directory() {
     let directory = TempDir::new().expect("a temporary directory");

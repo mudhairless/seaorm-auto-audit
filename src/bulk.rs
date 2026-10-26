@@ -16,8 +16,9 @@
 //!
 //! Each wrapper reads the affected rows as the before state, runs the write on
 //! the same connection handle, reads the after state where the write has one,
-//! and writes one audit row per affected row through [`write_record`]. The
-//! redaction rules are the same as the hook path's.
+//! and writes one audit row per affected row, batched into a single statement
+//! through [`write_records`]. The redaction rules are the same as the hook
+//! path's.
 //!
 //! Run them inside the caller's transaction: that is what makes the writes and
 //! their audit rows commit or roll back together.
@@ -25,21 +26,21 @@
 //! The wrappers forbid nothing. The coverage checker still bans the raw calls
 //! in application code (`seaorm-auto-audit-check`); these are the replacement.
 //!
-//! [`write_record`]: crate::write_record
+//! [`write_records`]: crate::write_records
 
 use std::collections::HashMap;
 
 use sea_orm::sea_query::IntoValueTuple;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, ConnectionTrait, DbBackend, DbErr, DeleteResult,
-    EntityTrait, IntoActiveModel, Iterable, ModelTrait, PrimaryKeyToColumn, PrimaryKeyTrait,
-    QueryFilter, UpdateResult, Value,
+    ActiveModelTrait, ActiveValue, ColumnTrait, Condition, ConnectionTrait, DbBackend, DbErr,
+    DeleteResult, EntityTrait, IntoActiveModel, Iterable, ModelTrait, PrimaryKeyToColumn,
+    PrimaryKeyTrait, QueryFilter, UpdateResult, Value,
 };
 use serde::Serialize;
 
 use crate::auditable::Auditable;
 use crate::context::with_context;
-use crate::hooks::{build_record, write_record};
+use crate::hooks::{build_record, write_records};
 use crate::id::AuditId;
 use crate::record::AuditAction;
 use crate::redact;
@@ -62,12 +63,17 @@ where
     with_context(|_| ())?;
 
     let models: Vec<E::ActiveModel> = models.into_iter().collect();
+    if models.is_empty() {
+        return Ok(Vec::new());
+    }
     let keys = explicit_keys::<E>(&models)?;
 
     let inserted = if db.get_database_backend() == DbBackend::MySql {
         let Some(keys) = keys else {
             return Err(DbErr::Custom(format!(
-                "seaorm-auto-audit: MySQL cannot generate primary keys for `{}` inside                  `insert_many` — set the primary key on every model, or insert them one at a                  time inside an audit scope",
+                "seaorm-auto-audit: MySQL cannot generate primary keys for `{}` inside \
+                 `insert_many` — set the primary key on every model, or insert them one at a \
+                 time inside an audit scope",
                 E::default().table_name()
             )));
         };
@@ -77,18 +83,19 @@ where
         E::insert_many(models).exec_with_returning(db).await?
     };
 
+    let mut records = Vec::with_capacity(inserted.len());
     for model in &inserted {
         let mut after = to_json::<E>(model)?;
         redact::drop_columns(&mut after, E::redacted_columns());
-        let record = build_record(
+        records.push(build_record(
             E::default().table_name(),
             E::audit_id(model)?,
             AuditAction::Create,
             None,
             Some(after),
-        )?;
-        write_record(db, record).await?;
+        )?);
     }
+    write_records(db, &records).await?;
 
     Ok(inserted)
 }
@@ -99,6 +106,10 @@ where
 /// `Entity::update_many().set(..)` takes. The before state is every row the
 /// filter matches; the after state is read back by primary key, so a row that
 /// no longer matches the filter is still audited.
+///
+/// The primary key itself cannot be changed this way: the trail is keyed by
+/// the row's existing key, so a `values` model that sets a primary key column
+/// is rejected before anything runs.
 pub async fn update_many<E, C>(
     db: &C,
     filter: Condition,
@@ -110,6 +121,20 @@ where
     C: ConnectionTrait,
 {
     with_context(|_| ())?;
+
+    // The read-back below finds the after state under the rows' existing
+    // keys. A `values` model that sets a key column would move a row to a
+    // new key, the read-back would miss it, and the row would be recorded
+    // as deleted when it is alive under the new key. Refuse up front.
+    for primary_key in <E::PrimaryKey as Iterable>::iter() {
+        if matches!(values.get(primary_key.into_column()), ActiveValue::Set(_)) {
+            return Err(DbErr::Custom(format!(
+                "seaorm-auto-audit: `update_many` on `{}` cannot change the primary key — \
+                 update the row with `am.update(db)` inside a scope instead",
+                E::default().table_name()
+            )));
+        }
+    }
 
     let before_models = E::find().filter(filter.clone()).all(db).await?;
     let result = E::update_many().set(values).filter(filter).exec(db).await?;
@@ -125,6 +150,7 @@ where
             .map(|model| Ok((E::audit_id(&model)?, model)))
             .collect::<Result<_, DbErr>>()?;
 
+    let mut records = Vec::with_capacity(before_models.len());
     for before_model in &before_models {
         let id = E::audit_id(before_model)?;
         let mut before = to_json::<E>(before_model)?;
@@ -133,30 +159,29 @@ where
             Some(after_model) => {
                 let mut after = to_json::<E>(&after_model)?;
                 redact::reconcile(&mut before, &mut after, E::redacted_columns());
-                let record = build_record(
+                records.push(build_record(
                     E::default().table_name(),
                     id,
                     AuditAction::Update,
                     Some(before),
                     Some(after),
-                )?;
-                write_record(db, record).await?;
+                )?);
             }
             None => {
                 // The row stopped existing as part of the update (a trigger,
                 // or a delete racing the update). Record what was there.
                 redact::drop_columns(&mut before, E::redacted_columns());
-                let record = build_record(
+                records.push(build_record(
                     E::default().table_name(),
                     id,
                     AuditAction::Delete,
                     Some(before),
                     None,
-                )?;
-                write_record(db, record).await?;
+                )?);
             }
         }
     }
+    write_records(db, &records).await?;
 
     Ok(result)
 }
@@ -173,18 +198,19 @@ where
     let before_models = E::find().filter(filter.clone()).all(db).await?;
     let result = E::delete_many().filter(filter).exec(db).await?;
 
+    let mut records = Vec::with_capacity(before_models.len());
     for model in &before_models {
         let mut before = to_json::<E>(model)?;
         redact::drop_columns(&mut before, E::redacted_columns());
-        let record = build_record(
+        records.push(build_record(
             E::default().table_name(),
             E::audit_id(model)?,
             AuditAction::Delete,
             Some(before),
             None,
-        )?;
-        write_record(db, record).await?;
+        )?);
     }
+    write_records(db, &records).await?;
 
     Ok(result)
 }

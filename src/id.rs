@@ -27,6 +27,10 @@ use uuid::Uuid;
 /// The value is kept as text so one crate can audit tables whose keys are
 /// `uuid`, integer or string. Construct it from any of those types with
 /// [`From`], or from a database [`Value`] with [`AuditId::from_value`].
+///
+/// Ordering and comparison use that text form. Integer identifiers therefore
+/// do not sort numerically as `AuditId`s: "10" orders before "2". Parse the
+/// text back with [`AuditId::as_str`] when numeric order matters.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AuditId(String);
 
