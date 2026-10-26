@@ -242,6 +242,47 @@ async fn the_request_details_reach_the_audit_row() {
 }
 
 #[tokio::test]
+async fn an_absolute_request_uri_is_recorded_as_it_arrived() {
+    let db = MockDatabase::new(DbBackend::Postgres)
+        .append_query_results([[common::user(Uuid::nil())]])
+        .append_exec_results([MockExecResult {
+            rows_affected: 1,
+            ..Default::default()
+        }])
+        .into_connection();
+
+    let app = Router::new()
+        .route("/things/{id}", get(handler))
+        .layer(middleware::from_fn(audit_scope))
+        .with_state(db.clone());
+
+    // An absolute-form URI already carries its scheme and host, so there
+    // is nothing to assemble: the recorded URL is the URI itself.
+    let request = Request::builder()
+        .uri("https://api.example.com/things/42?tab=history")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app
+        .oneshot(request)
+        .await
+        .expect("the request should succeed");
+
+    assert!(response.status().is_success());
+
+    let log = db.into_transaction_log();
+    let statement = log.last().unwrap().statements().last().unwrap();
+    let bindings = insert_bindings(statement);
+
+    assert_eq!(
+        bindings["url"],
+        sea_orm::Value::String(Some(
+            "https://api.example.com/things/42?tab=history".to_owned()
+        ))
+    );
+}
+
+#[tokio::test]
 async fn the_local_client_ip_extension_is_a_fallback() {
     let db = MockDatabase::new(DbBackend::Postgres)
         .append_query_results([[common::user(Uuid::nil())]])

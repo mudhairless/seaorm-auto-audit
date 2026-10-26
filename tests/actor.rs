@@ -153,3 +153,42 @@ async fn a_write_in_a_spawned_task_without_a_scope_fails() {
         "expected a missing-scope error, got: {message}"
     );
 }
+
+#[tokio::test]
+async fn the_request_metadata_is_read_from_the_task_local() {
+    let metadata = seaorm_auto_audit::RequestMetadata {
+        ip_address: Some("203.0.113.7".to_owned()),
+        url: Some("http://api.example.com/users".to_owned()),
+        user_agent: Some("ftg-test/1.0".to_owned()),
+    };
+
+    assert_eq!(seaorm_auto_audit::current_request_metadata(), None);
+
+    seaorm_auto_audit::scope_with_request(
+        Some(Uuid::new_v4().into()),
+        Some(metadata.clone()),
+        async {
+            assert_eq!(
+                seaorm_auto_audit::current_request_metadata(),
+                Some(metadata)
+            );
+        },
+    )
+    .await;
+
+    // A plain scope carries no request.
+    scope(None, async {
+        assert_eq!(seaorm_auto_audit::current_request_metadata(), None);
+    })
+    .await;
+}
+
+#[test]
+fn the_context_debug_shows_the_actor_and_hides_the_stash() {
+    let actor = Uuid::new_v4();
+    let context = seaorm_auto_audit::AuditContext::new(Some(actor.into()));
+
+    let rendered = format!("{context:?}");
+    assert!(rendered.contains(&actor.to_string()), "{rendered}");
+    assert!(!rendered.contains("stash"), "{rendered}");
+}
