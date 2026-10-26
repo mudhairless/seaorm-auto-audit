@@ -15,7 +15,7 @@ use axum::response::Response;
 use axum::routing::get;
 use common::{ActiveModel, insert_bindings};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbBackend, MockDatabase, MockExecResult};
-use seaorm_auto_audit::middleware::{Actor, ClientIp};
+use seaorm_auto_audit::middleware::{Actor, ClientIp, ClientIpSource};
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -194,16 +194,68 @@ async fn the_request_details_reach_the_audit_row() {
     let app = Router::new()
         .route("/things/{id}", get(handler))
         .layer(middleware::from_fn(audit_scope))
+        .layer(ClientIpSource::XRealIp.into_extension())
         .with_state(db.clone());
 
     let mut request = Request::builder()
         .uri("/things/42?tab=history")
         .header("host", "api.example.com")
+        .header("x-real-ip", "203.0.113.7")
+        .header("x-forwarded-proto", "https")
+        .header("x-forwarded-host", "evil.example")
         .header("user-agent", "ftg-test/1.0")
         .body(Body::empty())
         .unwrap();
-    // The application resolved the client address from the header its trusted
-    // edge sets. The crate itself does not trust a forwarding header.
+    // The configured source wins; the local extension is only a fallback.
+    request
+        .extensions_mut()
+        .insert(ClientIp("198.51.100.9".to_owned()));
+
+    let response = app
+        .oneshot(request)
+        .await
+        .expect("the request should succeed");
+
+    assert!(response.status().is_success());
+
+    let log = db.into_transaction_log();
+    let statement = log.last().unwrap().statements().last().unwrap();
+    let bindings = insert_bindings(statement);
+
+    assert_eq!(
+        bindings["ip_address"],
+        sea_orm::Value::String(Some("203.0.113.7".to_owned()))
+    );
+    // Forwarded host and proto headers are not trusted: the URL comes from
+    // the request's own Host header and the http fallback.
+    assert_eq!(
+        bindings["url"],
+        sea_orm::Value::String(Some(
+            "http://api.example.com/things/42?tab=history".to_owned()
+        ))
+    );
+    assert_eq!(
+        bindings["user_agent"],
+        sea_orm::Value::String(Some("ftg-test/1.0".to_owned()))
+    );
+}
+
+#[tokio::test]
+async fn the_local_client_ip_extension_is_a_fallback() {
+    let db = MockDatabase::new(DbBackend::Postgres)
+        .append_query_results([[common::user(Uuid::nil())]])
+        .append_exec_results([MockExecResult {
+            rows_affected: 1,
+            ..Default::default()
+        }])
+        .into_connection();
+
+    let app = Router::new()
+        .route("/", get(handler))
+        .layer(middleware::from_fn(audit_scope))
+        .with_state(db.clone());
+
+    let mut request = Request::builder().uri("/").body(Body::empty()).unwrap();
     request
         .extensions_mut()
         .insert(ClientIp("203.0.113.7".to_owned()));
@@ -223,15 +275,45 @@ async fn the_request_details_reach_the_audit_row() {
         bindings["ip_address"],
         sea_orm::Value::String(Some("203.0.113.7".to_owned()))
     );
+}
+
+#[tokio::test]
+async fn the_peer_address_is_the_last_resort() {
+    let db = MockDatabase::new(DbBackend::Postgres)
+        .append_query_results([[common::user(Uuid::nil())]])
+        .append_exec_results([MockExecResult {
+            rows_affected: 1,
+            ..Default::default()
+        }])
+        .into_connection();
+
+    let app = Router::new()
+        .route("/", get(handler))
+        .layer(middleware::from_fn(audit_scope))
+        .with_state(db.clone());
+
+    let mut request = Request::builder().uri("/").body(Body::empty()).unwrap();
+    request
+        .extensions_mut()
+        .insert(axum::extract::ConnectInfo(std::net::SocketAddr::from((
+            [203, 0, 113, 7],
+            4000,
+        ))));
+
+    let response = app
+        .oneshot(request)
+        .await
+        .expect("the request should succeed");
+
+    assert!(response.status().is_success());
+
+    let log = db.into_transaction_log();
+    let statement = log.last().unwrap().statements().last().unwrap();
+    let bindings = insert_bindings(statement);
+
     assert_eq!(
-        bindings["url"],
-        sea_orm::Value::String(Some(
-            "http://api.example.com/things/42?tab=history".to_owned()
-        ))
-    );
-    assert_eq!(
-        bindings["user_agent"],
-        sea_orm::Value::String(Some("ftg-test/1.0".to_owned()))
+        bindings["ip_address"],
+        sea_orm::Value::String(Some("203.0.113.7".to_owned()))
     );
 }
 

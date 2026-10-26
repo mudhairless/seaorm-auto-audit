@@ -20,21 +20,27 @@
 //! audited, it is just not attributed to a user.
 //!
 //! The middleware also captures the request details an audit row records: the
-//! client address, the URL and the `User-Agent`. The address comes from a
-//! [`ClientIp`] extension when the application inserted one, and otherwise
-//! from the connection's peer address ([`ConnectInfo`]). The crate does not
-//! trust a forwarding header on its own — a header is only as trustworthy as
-//! the proxy that sets it, so that call belongs to the application.
+//! client address, the URL and the `User-Agent`. The address is resolved by
+//! [`axum_client_ip`]: install a [`ClientIpSource`] extension naming the header
+//! the trusted edge sets. The crate does not trust a forwarding header on its
+//! own — a header is only as trustworthy as the proxy that sets it, so that
+//! call belongs to the application. Without a configured source, a [`ClientIp`]
+//! extension inserted by the application is used as a fallback, and then the
+//! connection's peer address ([`ConnectInfo`]).
 
 use std::net::SocketAddr;
 
-use axum::extract::{ConnectInfo, OriginalUri, Request};
+use axum::extract::{ConnectInfo, FromRequestParts, OriginalUri, Request};
+use axum::http::request::Parts;
 use axum::http::{HeaderMap, Uri, header};
 use axum::middleware::Next;
 use axum::response::Response;
+use axum_client_ip::ClientIp as ResolvedClientIp;
 
 use crate::context::{RequestMetadata, scope_with_request};
 use crate::id::AuditId;
+
+pub use axum_client_ip::ClientIpSource;
 
 /// The user making the change, carried in the request extensions.
 ///
@@ -52,10 +58,10 @@ impl Actor {
 
 /// The client address, carried in the request extensions.
 ///
-/// Set this from the header a trusted proxy sets (nginx's `X-Real-IP`, for
-/// instance) when the application runs behind one. Without it the middleware
-/// falls back to the connection's peer address, which behind a proxy is the
-/// proxy's address.
+/// This is the fallback for an application that has already resolved the
+/// address itself. Prefer configuring [`axum_client_ip`] with a
+/// [`ClientIpSource`], which names the header the trusted edge sets and keeps
+/// that policy in one place.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClientIp(pub String);
 
@@ -69,7 +75,7 @@ pub async fn scope_request(
     resolve: impl Fn(&Request) -> Option<AuditId>,
 ) -> Response {
     let user_id = resolve(&req);
-    let request = metadata_of(&req);
+    let (request, req) = metadata_of(req).await;
     scope_with_request(user_id, Some(request), next.run(req)).await
 }
 
@@ -79,44 +85,55 @@ pub async fn scope_request(
 /// See [`Actor`].
 pub async fn scope_request_with_extension(req: Request, next: Next) -> Response {
     let user_id = req.extensions().get::<Actor>().map(|actor| actor.0.clone());
-    let request = metadata_of(&req);
+    let (request, req) = metadata_of(req).await;
     scope_with_request(user_id, Some(request), next.run(req)).await
 }
 
 /// The request details recorded on the audit rows of this request.
-fn metadata_of(req: &Request) -> RequestMetadata {
-    RequestMetadata {
-        ip_address: client_ip(req),
-        url: Some(url_of(req)),
-        user_agent: req
-            .headers()
+async fn metadata_of(req: Request) -> (RequestMetadata, Request) {
+    let (mut parts, body) = req.into_parts();
+
+    let request = RequestMetadata {
+        ip_address: client_ip(&mut parts).await,
+        url: Some(url_of(&parts)),
+        user_agent: parts
+            .headers
             .get(header::USER_AGENT)
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned),
-    }
+    };
+
+    (request, Request::from_parts(parts, body))
 }
 
-/// The client address: what the application supplied, else the peer address.
-fn client_ip(req: &Request) -> Option<String> {
-    req.extensions()
+/// The client address from the configured [`ClientIpSource`], then the local
+/// extension, then the peer address.
+async fn client_ip(parts: &mut Parts) -> Option<String> {
+    if let Ok(ResolvedClientIp(ip)) = ResolvedClientIp::from_request_parts(parts, &()).await {
+        return Some(ip.to_string());
+    }
+
+    parts
+        .extensions
         .get::<ClientIp>()
         .map(|ip| ip.0.clone())
         .or_else(|| {
-            req.extensions()
+            parts
+                .extensions
                 .get::<ConnectInfo<SocketAddr>>()
                 .map(|info| info.0.ip().to_string())
         })
 }
 
 /// The request URL, made absolute when the host is known.
-fn url_of(req: &Request) -> String {
-    let uri = req
-        .extensions()
+fn url_of(parts: &Parts) -> String {
+    let uri = parts
+        .extensions
         .get::<OriginalUri>()
         .map(|original| &original.0)
-        .unwrap_or_else(|| req.uri());
+        .unwrap_or(&parts.uri);
 
-    absolute_url(uri, req.headers())
+    absolute_url(uri, &parts.headers)
 }
 
 /// `path?query` -> `scheme://host/path?query`, when a host header exists.
@@ -125,17 +142,13 @@ fn absolute_url(uri: &Uri, headers: &HeaderMap) -> String {
         return uri.to_string();
     }
 
-    let header_value = |name: &str| {
-        headers
-            .get(name)
-            .and_then(|value| value.to_str().ok())
-            .filter(|value| !value.is_empty())
-    };
-    let scheme = header_value("x-forwarded-proto").unwrap_or("http");
-    let host = header_value("x-forwarded-host").or_else(|| header_value("host"));
+    let host = headers
+        .get(header::HOST)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty());
 
     match host {
-        Some(host) => format!("{scheme}://{host}{uri}"),
+        Some(host) => format!("http://{host}{uri}"),
         None => uri.to_string(),
     }
 }

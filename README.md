@@ -164,19 +164,30 @@ async fn audit_scope_extensions(req: Request, next: Next) -> Response {
 ```
 
 Both capture the request details the audit row records: the client address,
-the URL and the `User-Agent`. The address comes from a
-`seaorm_auto_audit::middleware::ClientIp` request extension when the
-application inserted one, and otherwise from the connection's peer address
-(`ConnectInfo`). The crate does not trust a forwarding header on its own:
+the URL and the `User-Agent`.
+
+The address is resolved by [`axum-client-ip`](https://docs.rs/axum-client-ip).
+Install a `ClientIpSource` extension naming the header your trusted edge sets:
 
 ```rust
-// The app knows which header its trusted edge sets. nginx overwrites
-// X-Real-IP on every request, so it is the header to believe behind nginx.
-if let Some(ip) = req.headers().get("x-real-ip").and_then(|v| v.to_str().ok()) {
-    req.extensions_mut().insert(ClientIp(ip.to_owned()));
-}
-seaorm_auto_audit::middleware::scope_request_with_extension(req, next).await
+use seaorm_auto_audit::middleware::ClientIpSource;
+
+let app = Router::new()
+    .route("/users", post(create_user))
+    .layer(from_fn(audit_scope))
+    .layer(ClientIpSource::XRealIp.into_extension());
 ```
+
+Only choose a header that the edge overwrites on every request, and install the
+source outside the audit scope so the middleware sees it. Without a configured
+source, an address the application already resolved into the crate's `ClientIp`
+request extension is used, and then the connection's peer address
+(`ConnectInfo`), which behind a proxy is the proxy's address.
+
+The URL is built from the request URI and the request's `Host` header, with
+`http` as the fallback scheme. `X-Forwarded-Proto` and `X-Forwarded-Host` are
+not trusted either: forwarded headers are only as trustworthy as the proxy that
+sets them.
 
 `seaorm_auto_audit::current_user_id()` returns the acting user of the current scope as an
 `Option<AuditId>`, or `None` outside a scope and for machine-made changes.

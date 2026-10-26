@@ -1,6 +1,6 @@
 [package]
 name = "seaorm-auto-audit"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.94.0"
 description = "Automatic audit trails for SeaORM entities: lifecycle hooks, a task-local actor, before/after snapshots and credential redaction."
@@ -20,7 +20,7 @@ path = "src/bin/check.rs"
 [features]
 default = []
 # Middleware helpers for scoping the audit context around an HTTP request.
-axum = ["dep:axum"]
+axum = ["dep:axum", "dep:axum-client-ip"]
 
 [dependencies]
 async-trait = "0.1.89"
@@ -38,6 +38,7 @@ tracing = "0.1.44"
 uuid = { version = "1.18.1", features = ["serde", "v4", "v7"] }
 
 axum = { version = "0.8.9", optional = true }
+axum-client-ip = { version = "1.3.1", optional = true }
 
 [dev-dependencies]
 axum = { version = "0.8.9", features = ["json", "macros"] }
