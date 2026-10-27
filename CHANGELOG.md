@@ -10,6 +10,15 @@ listed under Changed.
 
 ### Added
 
+- `prune(db, policy, mode)`: standalone pruning of the `audits` table.
+  A `PrunePolicy` keeps the latest N audits per (table, id) and/or drops
+  audits older than an age; the rules combine as a union, and a policy
+  with neither is refused. `PruneMode::DryRun` returns the rows the
+  policy selects and deletes nothing; `PruneMode::Delete` removes them
+  in a transaction and returns the rows removed. Nothing prunes on write
+  and nothing is scheduled.
+
+
 - `Auditable::excluded_columns()`: columns left out of audit records
   entirely, with no marker. An update that touches only excluded columns
   writes no audit row. Distinct from `redacted_columns()`, whose changes

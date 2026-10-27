@@ -67,6 +67,7 @@ pub mod bulk;
 pub mod context;
 pub mod hooks;
 pub mod id;
+pub mod prune;
 pub mod record;
 pub mod redact;
 pub mod scan;
@@ -88,5 +89,6 @@ pub use hooks::{
     after_delete, after_save, before_delete, before_save, write_record, write_records,
 };
 pub use id::AuditId;
+pub use prune::{PruneMode, PrunePolicy, prune};
 pub use record::{AuditAction, AuditRecord, ColumnChange, UnknownAction};
 pub use redact::REDACTED;

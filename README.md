@@ -316,6 +316,31 @@ am.update(&txn).await?;   // the write and its audit row, together
 txn.commit().await?;
 ```
 
+## Pruning
+
+The crate never prunes on write and never schedules anything; removing
+history is a decision the application makes on purpose, by calling `prune`
+from its own maintenance job or admin tool:
+
+```rust
+use std::time::Duration;
+use seaorm_auto_audit::{prune, PruneMode, PrunePolicy};
+
+let policy = PrunePolicy {
+    keep_latest: Some(100),                          // per audited row
+    older_than: Some(Duration::from_secs(90 * 24 * 60 * 60)),
+};
+let reported = prune(&db, &policy, PruneMode::DryRun).await?;
+```
+
+The two rules combine as a union: a row is selected when it is older than
+the age, or beyond the keep count for its row, or both. Both modes return
+the rows in question, oldest first. `DryRun` deletes nothing, so a new
+policy is inspectable before it is trusted; `Delete` removes the selected
+rows inside a transaction and returns the rows it removed, so pruning and
+backing up the removed history are one step. A policy with neither rule
+set is refused.
+
 ## Coverage
 
 SeaORM fires the lifecycle hooks only from `ActiveModel`'s own methods.
