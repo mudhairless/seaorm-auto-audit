@@ -30,10 +30,10 @@ seaorm_auto_audit::scope(Some(user_id.into()), handler(req)).await;
 ## Install
 
 ```toml
-seaorm-auto-audit = "0.4"
+seaorm-auto-audit = "0.9"
 
 # with the axum middleware helpers:
-seaorm-auto-audit = { version = "0.4", features = ["axum"] }
+seaorm-auto-audit = { version = "0.9", features = ["axum"] }
 ```
 
 Requires SeaORM 2.0 and Rust 1.94.0 or later.

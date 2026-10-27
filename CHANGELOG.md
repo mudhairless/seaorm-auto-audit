@@ -8,6 +8,8 @@ listed under Changed.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-27
+
 ### Changed
 
 - The `audits` table gains a nullable `comment` column, and its action
