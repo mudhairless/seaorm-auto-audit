@@ -93,6 +93,7 @@ where
     for model in &inserted {
         let mut after = to_json::<E>(model)?;
         redact::drop_columns(&mut after, E::redacted_columns());
+        redact::drop_columns(&mut after, E::excluded_columns());
         records.push(build_record(
             E::default().table_name(),
             E::audit_id(model)?,
@@ -174,6 +175,8 @@ where
         match after_by_id.remove(&id) {
             Some(after_model) => {
                 let mut after = to_json::<E>(&after_model)?;
+                redact::drop_columns(&mut before, E::excluded_columns());
+                redact::drop_columns(&mut after, E::excluded_columns());
                 redact::reconcile(&mut before, &mut after, E::redacted_columns());
                 // A row the update left exactly as it was changed nothing:
                 // no audit row for it, though other rows may have changed.
@@ -191,6 +194,7 @@ where
                 // The row stopped existing as part of the update (a trigger,
                 // or a delete racing the update). Record what was there.
                 redact::drop_columns(&mut before, E::redacted_columns());
+                redact::drop_columns(&mut before, E::excluded_columns());
                 records.push(build_record(
                     E::default().table_name(),
                     id,
@@ -232,6 +236,7 @@ where
     for model in &before_models {
         let mut before = to_json::<E>(model)?;
         redact::drop_columns(&mut before, E::redacted_columns());
+        redact::drop_columns(&mut before, E::excluded_columns());
         records.push(build_record(
             E::default().table_name(),
             E::audit_id(model)?,

@@ -289,6 +289,13 @@ diff rather than two full rows. An update that changed nothing writes no
 audit row at all. Creates and deletes hold the full row, because there the
 whole row is the change.
 
+A third list, `excluded_columns()`, covers columns that should not be
+recorded at all: no value, no marker, as if the column did not exist. Noise
+belongs there, a timestamp or counter that changes on every write, and an
+update that touches only excluded columns writes no audit row. Redaction
+says "this changed, but you may not see it"; exclusion says "this is not
+worth recording".
+
 ## Transactions are part of the design
 
 Hook errors behave differently before and after the write, and the difference

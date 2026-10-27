@@ -10,6 +10,12 @@ listed under Changed.
 
 ### Added
 
+- `Auditable::excluded_columns()`: columns left out of audit records
+  entirely, with no marker. An update that touches only excluded columns
+  writes no audit row. Distinct from `redacted_columns()`, whose changes
+  are still recorded as a marker; a column listed in both is excluded.
+
+
 - `audits::Model::modified()`: the per-column changes a stored audit record
   describes, as `ColumnChange` values (column name, before value, after
   value). Update records report the columns in their stored pair; update

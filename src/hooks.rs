@@ -105,12 +105,15 @@ where
 
     let before = if insert {
         redact::drop_columns(&mut after, redacted);
+        redact::drop_columns(&mut after, E::excluded_columns());
         None
     } else {
         let key = StashKey::for_model::<E>(&model)?;
         let stashed = with_context(|ctx| ctx.stash_take(&key))?;
         match stashed {
             Some(Stashed::Present { mut snapshot, .. }) => {
+                redact::drop_columns(&mut snapshot, E::excluded_columns());
+                redact::drop_columns(&mut after, E::excluded_columns());
                 redact::reconcile(&mut snapshot, &mut after, redacted);
                 if redact::holds_no_change(&snapshot, &after) {
                     // The update set every column to the value it already
@@ -217,6 +220,7 @@ where
     // The action already says the row was removed; the redacted columns would
     // only repeat what the action says.
     redact::drop_columns(&mut snapshot, E::redacted_columns());
+    redact::drop_columns(&mut snapshot, E::excluded_columns());
 
     let record = build_record(
         E::default().table_name(),
