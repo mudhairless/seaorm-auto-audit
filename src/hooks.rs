@@ -81,8 +81,10 @@ where
 /// Record a write that just happened.
 ///
 /// On an insert the audit row holds the new state and no "before". On an
-/// update it holds both, with the redacted columns reconciled so that a
-/// credential change shows up as a change without showing the credential.
+/// update it holds the columns that changed, on both sides, with the
+/// redacted columns reconciled so that a credential change shows up as a
+/// change without showing the credential. An update that changed nothing
+/// writes no audit row.
 pub async fn after_save<E, C>(model: E::Model, db: &C, insert: bool) -> Result<E::Model, DbErr>
 where
     E: Auditable,
@@ -110,6 +112,11 @@ where
         match stashed {
             Some(Stashed::Present { mut snapshot, .. }) => {
                 redact::reconcile(&mut snapshot, &mut after, redacted);
+                if redact::holds_no_change(&snapshot, &after) {
+                    // The update set every column to the value it already
+                    // had: nothing changed, so there is nothing to audit.
+                    return Ok(model);
+                }
                 Some(snapshot)
             }
             Some(Stashed::Missing) => {

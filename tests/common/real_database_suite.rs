@@ -442,6 +442,109 @@ macro_rules! real_database_suite {
             }
 
             #[tokio::test]
+            async fn an_update_that_changes_nothing_writes_no_audit_row() {
+                let Some(db) = database().await else {
+                    return;
+                };
+                let id = new_key();
+                let actor = new_key();
+
+                let txn = db.begin().await.expect("the transaction should start");
+                scope(Some(actor.into()), async {
+                    ActiveModel {
+                        id: Set(id.clone()),
+                        name: Set("Ada".to_owned()),
+                        email: Set(Some("ada@example.com".to_owned())),
+                        password_hash: Set(Some("hash-before".to_owned())),
+                        age: Set(36),
+                    }
+                    .insert(&txn)
+                    .await
+                    .expect("the insert should succeed");
+
+                    // Every column is set to the value it already has.
+                    ActiveModel {
+                        id: Unchanged(id.clone()),
+                        name: Set("Ada".to_owned()),
+                        email: Set(Some("ada@example.com".to_owned())),
+                        password_hash: Set(Some("hash-before".to_owned())),
+                        age: Set(36),
+                    }
+                    .update(&txn)
+                    .await
+                    .expect("the update should succeed");
+                })
+                .await;
+                txn.commit().await.expect("the transaction should commit");
+
+                let audits = audits_of(&db, &id).await;
+                assert_eq!(audits.len(), 1, "only the create is audited");
+                assert_eq!(audits[0].action, "create");
+            }
+
+            #[tokio::test]
+            async fn update_many_skips_rows_it_left_unchanged() {
+                let Some(db) = database().await else {
+                    return;
+                };
+                let changed_id = new_key();
+                let unchanged_id = new_key();
+                let actor = new_key();
+
+                let row = |id: Key, name: &str| ActiveModel {
+                    id: Set(id),
+                    name: Set(name.to_owned()),
+                    email: Set(None),
+                    password_hash: Set(Some("hash-before".to_owned())),
+                    age: Set(36),
+                };
+
+                let txn = db.begin().await.expect("the transaction should start");
+                scope(Some(actor.into()), async {
+                    audited_insert_many::<Entity, _, _>(
+                        &txn,
+                        [
+                            row(changed_id.clone(), "Ada"),
+                            row(unchanged_id.clone(), "Grace"),
+                        ],
+                    )
+                    .await
+                    .expect("the seed insert should succeed");
+
+                    // One row moves to "Grace"; the other is already there.
+                    let filter = Condition::all()
+                        .add(Column::Id.is_in([changed_id.clone(), unchanged_id.clone()]));
+                    let values = ActiveModel {
+                        id: NotSet,
+                        name: Set("Grace".to_owned()),
+                        email: NotSet,
+                        password_hash: NotSet,
+                        age: NotSet,
+                    };
+                    let result = audited_update_many::<Entity, _>(&txn, filter, values)
+                        .await
+                        .expect("the bulk update should succeed");
+                    assert_eq!(result.rows_affected, 2);
+                })
+                .await;
+                txn.commit().await.expect("the transaction should commit");
+
+                let changed_audits = audits_of(&db, &changed_id).await;
+                let updates = changed_audits
+                    .iter()
+                    .filter(|audit| audit.action == "update")
+                    .count();
+                assert_eq!(updates, 1, "the changed row is audited");
+
+                let unchanged_audits = audits_of(&db, &unchanged_id).await;
+                let updates = unchanged_audits
+                    .iter()
+                    .filter(|audit| audit.action == "update")
+                    .count();
+                assert_eq!(updates, 0, "the unchanged row is not audited");
+            }
+
+            #[tokio::test]
             async fn update_many_matching_nothing_writes_no_audit_rows() {
                 let Some(db) = database().await else {
                     return;

@@ -446,9 +446,12 @@ async fn a_credential_change_is_marked_but_never_stored() {
 #[tokio::test]
 async fn an_unchanged_credential_is_dropped_from_the_audit_row() {
     let id = Uuid::new_v4();
+    let mut after = user(id);
+    after.name = "Grace".to_owned();
+
     let db = MockDatabase::new(DbBackend::Postgres)
         .append_query_results([[user(id)]])
-        .append_query_results([[user(id)]])
+        .append_query_results([[after]])
         .append_exec_results([MockExecResult {
             rows_affected: 1,
             ..Default::default()
@@ -1268,4 +1271,39 @@ async fn an_update_of_a_row_that_is_already_gone_writes_no_audit_row() {
         .flat_map(|transaction| transaction.statements().iter())
         .any(|statement| statement.sql.contains("audits"));
     assert!(!audited, "no audit row for a row that was not there");
+}
+
+#[tokio::test]
+async fn an_update_that_changes_nothing_writes_no_audit_row() {
+    // Every column is set to the value it already has. The update runs, but
+    // the reconciled pair is empty, so no audit row follows it.
+    let id = Uuid::new_v4();
+
+    let db = MockDatabase::new(DbBackend::Postgres)
+        // the `SELECT` in `before_save`
+        .append_query_results([[user(id)]])
+        // the `UPDATE ... RETURNING` hands back the same row
+        .append_query_results([[user(id)]])
+        .into_connection();
+
+    scope(Some(Uuid::new_v4().into()), async {
+        ActiveModel {
+            id: Unchanged(id),
+            name: Set("Ada".to_owned()),
+            email: NotSet,
+            password_hash: NotSet,
+            age: Set(36),
+        }
+        .update(&db)
+        .await
+        .expect("the update should succeed");
+    })
+    .await;
+
+    let log = db.into_transaction_log();
+    let audited = log
+        .iter()
+        .flat_map(|transaction| transaction.statements().iter())
+        .any(|statement| statement.sql.contains("audits"));
+    assert!(!audited, "a no-change update writes no audit row");
 }

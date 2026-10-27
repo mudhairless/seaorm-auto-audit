@@ -175,13 +175,17 @@ where
             Some(after_model) => {
                 let mut after = to_json::<E>(&after_model)?;
                 redact::reconcile(&mut before, &mut after, E::redacted_columns());
-                records.push(build_record(
-                    E::default().table_name(),
-                    id,
-                    AuditAction::Update,
-                    Some(before),
-                    Some(after),
-                )?);
+                // A row the update left exactly as it was changed nothing:
+                // no audit row for it, though other rows may have changed.
+                if !redact::holds_no_change(&before, &after) {
+                    records.push(build_record(
+                        E::default().table_name(),
+                        id,
+                        AuditAction::Update,
+                        Some(before),
+                        Some(after),
+                    )?);
+                }
             }
             None => {
                 // The row stopped existing as part of the update (a trigger,

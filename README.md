@@ -73,8 +73,8 @@ with any SeaORM-supported database:
 | `auditable_table` | the table of the audited row                         |
 | `auditable_id`    | the primary key of the audited row, as text          |
 | `action`          | `create`, `update` or `delete`                       |
-| `before_content`  | the row before the change (`null` for creates)       |
-| `after_content`   | the row after the change (`null` for deletes)        |
+| `before_content`  | before the change (`null` for creates); the full row, except for updates, where only the changed columns |
+| `after_content`   | after the change (`null` for deletes); the full row, except for updates, where only the changed columns  |
 | `updated_by_id`   | the user who made the change (`null` when nobody did) |
 | `ip_address`      | the client address, when there was a request         |
 | `url`             | the request URL, when there was a request            |
@@ -95,14 +95,10 @@ address and their password:
   "auditable_id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
   "action": "update",
   "before_content": {
-    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
-    "name": "Grace Hopper",
     "email": "grace@old.example",
     "password_hash": "[redacted]"
   },
   "after_content": {
-    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
-    "name": "Grace Hopper",
     "email": "grace@new.example",
     "password_hash": "[redacted]"
   },
@@ -114,8 +110,10 @@ address and their password:
 ```
 
 The password changed, so both snapshots carry the `"[redacted]"` marker and
-no hash appears anywhere in the row. Had it not changed, the column would be
-absent from both snapshots instead. The rules are in [Redaction](#redaction).
+no hash appears anywhere in the row. Only the columns that changed appear
+at all: the name and the id did not change, so they are absent, and the row
+is identified by `auditable_id`. Had the password not changed, its column
+would be absent too. The rules are in [Redaction](#redaction).
 
 `auditable_id` and `updated_by_id` are stored as text rather than a fixed
 column type. That lets one audit table cover tables whose keys are `uuid`,
@@ -284,6 +282,12 @@ password-only update produce two identical snapshots. The audit row exists but
 looks like a no-op, and nothing says the password was the thing that moved.
 With the rules above, **a redacted column present in an audit row means it
 changed, and no audit row ever holds a hash**.
+
+The same principle applies to every column, not just redacted ones: an
+update's snapshots hold only the columns that changed, so the pair is the
+diff rather than two full rows. An update that changed nothing writes no
+audit row at all. Creates and deletes hold the full row, because there the
+whole row is the change.
 
 ## Transactions are part of the design
 

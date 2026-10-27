@@ -8,6 +8,13 @@ listed under Changed.
 
 ## [Unreleased]
 
+### Changed
+
+- Update audit rows now store only the columns that changed, on both the
+  before and after sides, instead of the full row. An update that changed
+  nothing writes no audit row. Creates and deletes still store the full
+  row.
+
 ### Added
 
 - `scope_suspended`, an explicit scope in which audited writes proceed
