@@ -29,7 +29,7 @@ use serde_json::Value as Json;
 
 use crate::auditable::Auditable;
 use crate::audits;
-use crate::context::with_context;
+use crate::context::{is_suspended, with_context};
 use crate::id::AuditId;
 use crate::record::{AuditAction, AuditRecord};
 use crate::redact;
@@ -54,6 +54,10 @@ where
     E::Model: Serialize,
     C: ConnectionTrait,
 {
+    if is_suspended() {
+        return Ok(am);
+    }
+
     // Fail before touching the database when there is no scope: an audited
     // write outside a scope cannot produce a complete audit row.
     with_context(|_| ())?;
@@ -85,6 +89,10 @@ where
     E::Model: Serialize,
     C: ConnectionTrait,
 {
+    if is_suspended() {
+        return Ok(model);
+    }
+
     let action = if insert {
         AuditAction::Create
     } else {
@@ -145,6 +153,10 @@ where
     E::Model: Serialize,
     C: ConnectionTrait,
 {
+    if is_suspended() {
+        return Ok(am);
+    }
+
     // Fail before touching the database when there is no scope.
     with_context(|_| ())?;
 
@@ -168,6 +180,10 @@ where
     E::Model: Serialize,
     C: ConnectionTrait,
 {
+    if is_suspended() {
+        return Ok(am);
+    }
+
     let key = StashKey::for_active_model::<E>(&am)?;
     let stashed = with_context(|ctx| ctx.stash_take(&key))?;
 

@@ -6,6 +6,13 @@ project aims to follow semantic versioning while it is pre-1.0: a minor
 version bump may carry a deliberate behavior change, and such changes are
 listed under Changed.
 
+## [Unreleased]
+
+### Added
+
+- `scope_suspended`, an explicit scope in which audited writes proceed
+  without writing audit rows, for seeders, imports and backfills.
+
 ## [0.4.1] - 2026-10-26
 
 ### Fixed

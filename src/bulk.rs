@@ -39,7 +39,7 @@ use sea_orm::{
 use serde::Serialize;
 
 use crate::auditable::Auditable;
-use crate::context::with_context;
+use crate::context::{is_suspended, with_context};
 use crate::hooks::{build_record, write_records};
 use crate::id::AuditId;
 use crate::record::AuditAction;
@@ -60,7 +60,9 @@ where
     C: ConnectionTrait,
     I: IntoIterator<Item = E::ActiveModel>,
 {
-    with_context(|_| ())?;
+    if !is_suspended() {
+        with_context(|_| ())?;
+    }
 
     let models: Vec<E::ActiveModel> = models.into_iter().collect();
     if models.is_empty() {
@@ -82,6 +84,10 @@ where
     } else {
         E::insert_many(models).exec_with_returning(db).await?
     };
+
+    if is_suspended() {
+        return Ok(inserted);
+    }
 
     let mut records = Vec::with_capacity(inserted.len());
     for model in &inserted {
@@ -120,7 +126,9 @@ where
     E::Model: Serialize,
     C: ConnectionTrait,
 {
-    with_context(|_| ())?;
+    if !is_suspended() {
+        with_context(|_| ())?;
+    }
 
     // The read-back below finds the after state under the rows' existing
     // keys. A `values` model that sets a key column would move a row to a
@@ -136,8 +144,16 @@ where
         }
     }
 
-    let before_models = E::find().filter(filter.clone()).all(db).await?;
+    let before_models = if is_suspended() {
+        Vec::new()
+    } else {
+        E::find().filter(filter.clone()).all(db).await?
+    };
     let result = E::update_many().set(values).filter(filter).exec(db).await?;
+
+    if is_suspended() {
+        return Ok(result);
+    }
 
     if before_models.is_empty() {
         return Ok(result);
@@ -193,10 +209,20 @@ where
     E::Model: Serialize,
     C: ConnectionTrait,
 {
-    with_context(|_| ())?;
+    if !is_suspended() {
+        with_context(|_| ())?;
+    }
 
-    let before_models = E::find().filter(filter.clone()).all(db).await?;
+    let before_models = if is_suspended() {
+        Vec::new()
+    } else {
+        E::find().filter(filter.clone()).all(db).await?
+    };
     let result = E::delete_many().filter(filter).exec(db).await?;
+
+    if is_suspended() {
+        return Ok(result);
+    }
 
     let mut records = Vec::with_capacity(before_models.len());
     for model in &before_models {

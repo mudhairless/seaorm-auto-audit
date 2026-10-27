@@ -82,7 +82,7 @@ pub use audits::Entity as Audits;
 pub use bulk::{delete_by_id, delete_many, insert_many, update_many};
 pub use context::{
     AuditContext, NO_SCOPE, RequestMetadata, current_request_metadata, current_user_id, scope,
-    scope_with_request,
+    scope_suspended, scope_with_request,
 };
 pub use hooks::{
     after_delete, after_save, before_delete, before_save, write_record, write_records,

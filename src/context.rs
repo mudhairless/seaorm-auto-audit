@@ -19,6 +19,8 @@ pub const NO_SCOPE: &str = "seaorm-auto-audit: no audit scope is active — audi
 tokio::task_local! {
     /// The ambient audit context.
     static ACTOR: AuditContext;
+    /// Whether auditing is suspended for the current scope.
+    static SUSPENDED: bool;
 }
 
 /// The request details recorded on an audit row.
@@ -118,6 +120,26 @@ where
     F: Future,
 {
     ACTOR.scope(AuditContext::new(user_id), fut).await
+}
+
+/// Run `fut` with auditing suspended.
+///
+/// Writes inside it proceed unaudited. This exists for seeders, imports and
+/// backfills. It is deliberately a named scope at the call site rather than a
+/// flag.
+///
+/// Suspension is independent of the actor scope: it must work with no scope at
+/// all, and inside a normal scope it lasts until the scope_suspended future
+/// completes, after which normal auditing resumes in that scope.
+pub async fn scope_suspended<F>(fut: F) -> F::Output
+where
+    F: Future,
+{
+    SUSPENDED.scope(true, fut).await
+}
+
+pub(crate) fn is_suspended() -> bool {
+    SUSPENDED.try_with(|s| *s).unwrap_or(false)
 }
 
 /// Run `fut` with an audit context that also carries the request details.

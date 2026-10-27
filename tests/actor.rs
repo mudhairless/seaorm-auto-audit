@@ -192,3 +192,9 @@ fn the_context_debug_shows_the_actor_and_hides_the_stash() {
     assert!(rendered.contains(&actor.to_string()), "{rendered}");
     assert!(!rendered.contains("stash"), "{rendered}");
 }
+
+#[tokio::test]
+async fn scope_suspended_returns_the_future_value() {
+    let value = seaorm_auto_audit::scope_suspended(async { 42u32 }).await;
+    assert_eq!(value, 42);
+}

@@ -11,7 +11,7 @@ use sea_orm::{
     ActiveValue::{NotSet, Set, Unchanged},
     DbBackend, DbErr, MockDatabase, MockExecResult, TransactionTrait, Value,
 };
-use seaorm_auto_audit::{REDACTED, after_save, before_save, scope};
+use seaorm_auto_audit::{REDACTED, after_save, before_save, scope, scope_suspended, write_records};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -880,6 +880,270 @@ async fn write_records_with_no_records_runs_no_statement() {
         .expect("writing no records should succeed");
 
     assert!(db.into_transaction_log().is_empty());
+}
+
+#[tokio::test]
+async fn suspended_scope_audits_nothing_with_no_scope() {
+    let id = Uuid::new_v4();
+
+    let db = MockDatabase::new(DbBackend::Postgres)
+        .append_query_results([[user(id)]])
+        .append_exec_results([MockExecResult {
+            rows_affected: 1,
+            ..Default::default()
+        }])
+        .into_connection();
+
+    scope_suspended(async {
+        ActiveModel {
+            id: Set(id),
+            name: Set("Ada".to_owned()),
+            email: Set(None),
+            password_hash: Set(None),
+            age: Set(36),
+        }
+        .insert(&db)
+        .await
+        .expect("the insert should succeed");
+    })
+    .await;
+
+    let log = db.into_transaction_log();
+    assert_eq!(log.len(), 1, "only the write should happen");
+    let audited = log
+        .iter()
+        .flat_map(|transaction| transaction.statements().iter())
+        .any(|statement| statement.sql.contains("audits"));
+    assert!(!audited, "no audit row should be written");
+}
+
+#[tokio::test]
+async fn suspended_scope_update_and_delete_audits_nothing_with_no_scope() {
+    let id = Uuid::new_v4();
+    let mut after = user(id);
+    after.name = "Grace".to_owned();
+    after.age = 37;
+
+    let db = MockDatabase::new(DbBackend::Postgres)
+        .append_query_results([[user(id)]])
+        .append_query_results([[after.clone()]])
+        .append_exec_results([MockExecResult {
+            rows_affected: 1,
+            ..Default::default()
+        }])
+        .into_connection();
+
+    scope_suspended(async {
+        ActiveModel {
+            id: Unchanged(id),
+            name: Set("Grace".to_owned()),
+            email: NotSet,
+            password_hash: NotSet,
+            age: Set(37),
+        }
+        .update(&db)
+        .await
+        .expect("the update should succeed");
+
+        ActiveModel {
+            id: Unchanged(id),
+            name: NotSet,
+            email: NotSet,
+            password_hash: NotSet,
+            age: NotSet,
+        }
+        .delete(&db)
+        .await
+        .expect("the delete should succeed");
+    })
+    .await;
+
+    let log = db.into_transaction_log();
+    let audited = log
+        .iter()
+        .flat_map(|transaction| transaction.statements().iter())
+        .any(|statement| statement.sql.contains("audits"));
+    assert!(!audited, "no audit row should be written");
+}
+
+#[tokio::test]
+async fn suspended_scope_bulk_wrappers_write_nothing_audited() {
+    let id1 = Uuid::new_v4();
+    let id2 = Uuid::new_v4();
+
+    let db = MockDatabase::new(DbBackend::Postgres)
+        .append_exec_results([MockExecResult {
+            rows_affected: 1,
+            ..Default::default()
+        }])
+        .append_query_results([[user(id1), user(id2)]])
+        .into_connection();
+
+    scope_suspended(async {
+        let result = seaorm_auto_audit::delete_by_id::<Entity, _, _>(&db, id1)
+            .await
+            .expect("the delete_by_id should succeed");
+        assert_eq!(result.rows_affected, 1);
+
+        let models = vec![
+            ActiveModel {
+                id: Set(id1),
+                name: Set("A".to_owned()),
+                email: Set(None),
+                password_hash: Set(None),
+                age: Set(1),
+            },
+            ActiveModel {
+                id: Set(id2),
+                name: Set("B".to_owned()),
+                email: Set(None),
+                password_hash: Set(None),
+                age: Set(2),
+            },
+        ];
+        let inserted = seaorm_auto_audit::insert_many::<Entity, _, _>(&db, models)
+            .await
+            .expect("the insert_many should succeed");
+        assert_eq!(inserted.len(), 2);
+    })
+    .await;
+
+    let log = db.into_transaction_log();
+    let audited = log
+        .iter()
+        .flat_map(|transaction| transaction.statements().iter())
+        .any(|statement| statement.sql.contains("audits"));
+    assert!(!audited, "no audit row should be written");
+}
+
+#[tokio::test]
+async fn suspension_does_not_leak_and_scope_is_required_after() {
+    let id = Uuid::new_v4();
+    let db = MockDatabase::new(DbBackend::Postgres)
+        .append_query_results([[user(id)]])
+        .into_connection();
+
+    scope_suspended(async {}).await;
+
+    let result = ActiveModel {
+        id: Set(id),
+        name: Set("Ada".to_owned()),
+        email: Set(None),
+        password_hash: Set(None),
+        age: Set(36),
+    }
+    .insert(&db)
+    .await;
+
+    let Err(DbErr::Custom(message)) = result else {
+        panic!("expected the write to fail without a scope");
+    };
+    assert!(message.contains("no audit scope"));
+}
+
+#[tokio::test]
+async fn nested_suspension_in_normal_scope_audits_correctly() {
+    let id1 = Uuid::new_v4();
+    let id2 = Uuid::new_v4();
+
+    let mut after1 = user(id1);
+    after1.name = "Grace".to_owned();
+
+    let db = MockDatabase::new(DbBackend::Postgres)
+        .append_query_results([[user(id1)]])
+        .append_query_results([[after1.clone()]])
+        .append_exec_results([MockExecResult {
+            rows_affected: 1,
+            ..Default::default()
+        }])
+        .append_query_results([[user(id2)]])
+        .append_query_results([[user(id2)]])
+        .append_exec_results([
+            MockExecResult {
+                rows_affected: 1,
+                ..Default::default()
+            },
+            MockExecResult {
+                rows_affected: 1,
+                ..Default::default()
+            },
+        ])
+        .into_connection();
+
+    scope(Some(Uuid::new_v4().into()), async {
+        scope_suspended(async {
+            ActiveModel {
+                id: Unchanged(id1),
+                name: Set("Grace".to_owned()),
+                email: NotSet,
+                password_hash: NotSet,
+                age: NotSet,
+            }
+            .update(&db)
+            .await
+            .expect("suspended update should succeed");
+        })
+        .await;
+
+        ActiveModel {
+            id: Unchanged(id2),
+            name: NotSet,
+            email: NotSet,
+            password_hash: NotSet,
+            age: NotSet,
+        }
+        .delete(&db)
+        .await
+        .expect("audited delete should succeed");
+    })
+    .await;
+
+    let log = db.into_transaction_log();
+    let audited_count = log
+        .iter()
+        .flat_map(|transaction| transaction.statements().iter())
+        .filter(|statement| statement.sql.contains("audits"))
+        .count();
+    assert_eq!(
+        audited_count, 1,
+        "only the write after suspension should be audited"
+    );
+}
+
+#[tokio::test]
+async fn write_records_still_writes_inside_scope_suspended() {
+    let id = Uuid::new_v4();
+    let mut record = seaorm_auto_audit::AuditRecord::new(
+        "users".to_owned(),
+        seaorm_auto_audit::AuditId::from(id),
+        seaorm_auto_audit::AuditAction::Create,
+    );
+    record.before_content = None;
+    record.after_content = Some(serde_json::json!({"id": id.to_string()}));
+
+    let db = MockDatabase::new(DbBackend::Postgres)
+        .append_exec_results([MockExecResult {
+            rows_affected: 1,
+            ..Default::default()
+        }])
+        .into_connection();
+
+    scope_suspended(async {
+        write_records(&db, &[record])
+            .await
+            .expect("write_records should succeed inside suspended scope");
+    })
+    .await;
+
+    let log = db.into_transaction_log();
+    let audited = log
+        .iter()
+        .flat_map(|transaction| transaction.statements().iter())
+        .any(|statement| statement.sql.contains("audits"));
+    assert!(
+        audited,
+        "write_records should still write inside scope_suspended"
+    );
 }
 
 #[tokio::test]
