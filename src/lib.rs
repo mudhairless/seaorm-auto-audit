@@ -57,6 +57,20 @@
 //!   wrappers fail loudly rather than writing a half-empty audit row.
 //! * `tokio::spawn` does not inherit task-locals. Code spawned mid-request must
 //!   re-scope with [`scope`] or [`scope_with_request`].
+//!
+//! # The rest of the surface
+//!
+//! * [`Auditable::excluded_columns`] keeps noisy columns out of records
+//!   entirely; a redacted column's changes are recorded as a marker, an
+//!   excluded column's are not recorded at all.
+//! * [`scope_suspended`] runs writes unaudited, for seeders, imports and
+//!   backfills, as a named scope at the call site.
+//! * [`record_read`] and [`record_reads`] log reads the application marks
+//!   itself; SeaORM has no read hooks, so unmarked reads leave no row.
+//! * [`prune()`] removes audits by policy (keep the latest N per row, drop
+//!   older than an age) as an explicit operation with a dry-run mode.
+//! * A stored record diffs itself: [`modified`](crate::audits::Model::modified)
+//!   returns the per-column changes a record describes.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

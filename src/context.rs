@@ -128,8 +128,8 @@ where
 /// backfills. It is deliberately a named scope at the call site rather than a
 /// flag.
 ///
-/// Suspension is independent of the actor scope: it must work with no scope at
-/// all, and inside a normal scope it lasts until the scope_suspended future
+/// Suspension is independent of the actor scope: it works with no scope at
+/// all, and inside a normal scope it lasts until the suspended future
 /// completes, after which normal auditing resumes in that scope.
 pub async fn scope_suspended<F>(fut: F) -> F::Output
 where

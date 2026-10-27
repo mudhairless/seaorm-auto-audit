@@ -38,6 +38,11 @@ seaorm-auto-audit = { version = "0.4", features = ["axum"] }
 
 Requires SeaORM 2.0 and Rust 1.94.0 or later.
 
+For a runnable end-to-end version, see `examples/basic.rs`
+(`cargo run --example basic`): one entity, a suspended seed write, a
+scope, writes through the hooks and the bulk wrappers, a recorded read,
+and the printed trail, on a throwaway SQLite database.
+
 ## How it works
 
 Three pieces, and only three:
