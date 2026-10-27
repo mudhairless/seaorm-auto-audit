@@ -88,5 +88,5 @@ pub use hooks::{
     after_delete, after_save, before_delete, before_save, write_record, write_records,
 };
 pub use id::AuditId;
-pub use record::{AuditAction, AuditRecord, UnknownAction};
+pub use record::{AuditAction, AuditRecord, ColumnChange, UnknownAction};
 pub use redact::REDACTED;

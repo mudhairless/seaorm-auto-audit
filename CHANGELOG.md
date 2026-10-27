@@ -8,6 +8,17 @@ listed under Changed.
 
 ## [Unreleased]
 
+### Added
+
+- `audits::Model::modified()`: the per-column changes a stored audit record
+  describes, as `ColumnChange` values (column name, before value, after
+  value). Update records report the columns in their stored pair; update
+  records written by 0.x versions, which hold full snapshots, have their
+  unchanged columns filtered out, while a column redacted on both sides is
+  still reported, since the markers mean it changed. Records whose action is
+  not create, update or delete are rejected.
+
+
 ### Changed
 
 - Update audit rows now store only the columns that changed, on both the

@@ -22,8 +22,13 @@
 //! session and no request behind them. They are still audited, just not
 //! attributed.
 
+use std::str::FromStr;
+
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
+
+use crate::record::{AuditAction, ColumnChange};
+use crate::redact::REDACTED;
 
 /// The `audits` table.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
@@ -61,6 +66,80 @@ pub struct Model {
     /// The `User-Agent` of the request. `None` for machine-made changes.
     #[sea_orm(column_type = "Text", nullable)]
     pub user_agent: Option<String>,
+}
+
+impl Model {
+    /// The columns this record says changed, as before and after values.
+    ///
+    /// For a create, every stored column is reported with no before value;
+    /// for a delete, with no after value. For an update, the columns present
+    /// in the stored pair are the change, which is the shape current versions
+    /// write. Rows written by 0.x versions hold full snapshots instead, so
+    /// a column whose value is equal on both sides is filtered out as
+    /// unchanged, except a redaction marker pair: a column redacted on both
+    /// sides did change, and the markers are all that was stored.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the stored action is not `create`, `update` or
+    /// `delete`: a record of any other kind (a read event, say) has no column
+    /// changes to report.
+    pub fn modified(&self) -> Result<Vec<ColumnChange>, DbErr> {
+        let action = AuditAction::from_str(&self.action)
+            .map_err(|unknown| DbErr::Custom(format!("seaorm-auto-audit: {unknown}")))?;
+
+        let before = self.before_content.as_ref();
+        let after = self.after_content.as_ref();
+
+        let mut changes = Vec::new();
+        match action {
+            AuditAction::Create => {
+                if let Some(object) = after.and_then(Json::as_object) {
+                    changes.extend(object.iter().map(|(column, value)| ColumnChange {
+                        column: column.clone(),
+                        before: None,
+                        after: Some(value.clone()),
+                    }));
+                }
+            }
+            AuditAction::Delete => {
+                if let Some(object) = before.and_then(Json::as_object) {
+                    changes.extend(object.iter().map(|(column, value)| ColumnChange {
+                        column: column.clone(),
+                        before: Some(value.clone()),
+                        after: None,
+                    }));
+                }
+            }
+            AuditAction::Update => {
+                let marker = Json::String(REDACTED.to_owned());
+                let mut columns: Vec<&String> = Vec::new();
+                if let Some(object) = before.and_then(Json::as_object) {
+                    columns.extend(object.keys());
+                }
+                if let Some(object) = after.and_then(Json::as_object) {
+                    for column in object.keys() {
+                        if !columns.contains(&column) {
+                            columns.push(column);
+                        }
+                    }
+                }
+                for column in columns {
+                    let before_value = before.and_then(|content| content.get(column.as_str()));
+                    let after_value = after.and_then(|content| content.get(column.as_str()));
+                    if before_value == after_value && before_value != Some(&marker) {
+                        continue;
+                    }
+                    changes.push(ColumnChange {
+                        column: column.clone(),
+                        before: before_value.cloned(),
+                        after: after_value.cloned(),
+                    });
+                }
+            }
+        }
+        Ok(changes)
+    }
 }
 
 /// The `audits` table has no relations of its own: `auditable_table` /

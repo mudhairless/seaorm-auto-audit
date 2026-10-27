@@ -59,6 +59,22 @@ impl fmt::Display for AuditAction {
     }
 }
 
+/// One column's change within an audit record, as [`crate::audits::Model::modified`]
+/// reports it.
+///
+/// A side is `None` when the column is absent on that side: creation has no
+/// before, deletion has no after, and an update column that appears or
+/// disappears between the two states shows the missing side as `None`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ColumnChange {
+    /// The column's name.
+    pub column: String,
+    /// The value before the change, when the column was present.
+    pub before: Option<Json>,
+    /// The value after the change, when the column is present.
+    pub after: Option<Json>,
+}
+
 /// One audit row, before it is written.
 ///
 /// The helper builds these from the hooks; applications can build them by hand
