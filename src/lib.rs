@@ -75,6 +75,13 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+/// How many rows one INSERT statement carries. A statement binds one
+/// variable per column per row, and SQLite allows at most 32,766 variables
+/// in one statement (Postgres and MySQL allow 65,535), so an unbounded
+/// batch of wide rows fails with "too many SQL variables". 256 rows of a
+/// 128-column entity still fit the smallest limit.
+pub(crate) const STATEMENT_CHUNK: usize = 256;
+
 pub mod auditable;
 pub mod audits;
 pub mod bulk;

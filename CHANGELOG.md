@@ -73,6 +73,12 @@ listed under Changed.
   tree grows with the row count, and past roughly a thousand rows SQLite
   refused it with "Expression tree is too large", failing the whole bulk
   operation. Larger batches now take several smaller read-backs.
+- Batch writes go in slices of 256 rows per statement. One statement
+  binds a variable per column per row, and past a few thousand wide rows
+  that exceeds the per-statement variable limit (32,766 on SQLite,
+  65,535 on Postgres and MySQL), failing with "too many SQL variables".
+  This applies to the audited `insert_many` and to every audit batch
+  written through `write_records`.
 
 
 ## [0.4.1] - 2026-10-26

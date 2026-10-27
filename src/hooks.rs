@@ -302,10 +302,12 @@ where
         return Ok(());
     }
 
-    let rows = records.iter().map(audit_row).collect::<Vec<_>>();
-    audits::Entity::insert_many(rows)
-        .exec_without_returning(db)
-        .await?;
+    for records in records.chunks(crate::STATEMENT_CHUNK) {
+        let rows = records.iter().map(audit_row).collect::<Vec<_>>();
+        audits::Entity::insert_many(rows)
+            .exec_without_returning(db)
+            .await?;
+    }
 
     Ok(())
 }

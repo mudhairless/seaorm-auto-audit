@@ -70,7 +70,11 @@ where
     }
     let keys = explicit_keys::<E>(&models)?;
 
-    let inserted = if db.get_database_backend() == DbBackend::MySql {
+    // The insert goes in slices: one statement binds a variable per
+    // column per row, and past a few thousand wide rows that exceeds the
+    // backends' per-statement variable limits ("too many SQL variables").
+    let mut inserted = Vec::with_capacity(models.len());
+    if db.get_database_backend() == DbBackend::MySql {
         let Some(keys) = keys else {
             return Err(DbErr::Custom(format!(
                 "seaorm-auto-audit: MySQL cannot generate primary keys for `{}` inside \
@@ -79,11 +83,22 @@ where
                 E::default().table_name()
             )));
         };
-        E::insert_many(models).exec(db).await?;
-        select_by_key_values::<E, C>(db, &keys).await?
+        for (models, keys) in models
+            .chunks(crate::STATEMENT_CHUNK)
+            .zip(keys.chunks(crate::STATEMENT_CHUNK))
+        {
+            E::insert_many(models.to_vec()).exec(db).await?;
+            inserted.extend(select_by_key_values::<E, C>(db, keys).await?);
+        }
     } else {
-        E::insert_many(models).exec_with_returning(db).await?
-    };
+        for models in models.chunks(crate::STATEMENT_CHUNK) {
+            inserted.extend(
+                E::insert_many(models.to_vec())
+                    .exec_with_returning(db)
+                    .await?,
+            );
+        }
+    }
 
     if is_suspended() {
         return Ok(inserted);
@@ -308,21 +323,20 @@ where
     Ok(Some(keys))
 }
 
-/// How many key rows one read-back query takes. The condition is an `OR`
-/// of one `AND` per row, so its expression tree grows with the row count,
-/// and SQLite refuses an expression tree deeper than 1000: a bulk
-/// operation over more rows than that failed there with "Expression tree
-/// is too large". The read-backs below go in slices of this many keys.
-const KEY_CHUNK: usize = 256;
-
 /// The rows with the given primary key values.
+///
+/// The read-back condition is an `OR` of one `AND` per row, so its
+/// expression tree grows with the row count, and SQLite refuses an
+/// expression tree deeper than 1000: a bulk operation over more rows
+/// than that failed there with "Expression tree is too large". The
+/// read-backs below go in slices of `STATEMENT_CHUNK` keys.
 async fn select_by_key_values<E, C>(db: &C, keys: &[Vec<Value>]) -> Result<Vec<E::Model>, DbErr>
 where
     E: EntityTrait,
     C: ConnectionTrait,
 {
     let mut rows = Vec::new();
-    for keys in keys.chunks(KEY_CHUNK) {
+    for keys in keys.chunks(crate::STATEMENT_CHUNK) {
         let mut condition = Condition::any();
         for values in keys {
             let mut row = Condition::all();
@@ -347,11 +361,11 @@ where
         return Ok(Vec::new());
     }
 
-    // `OR` of one `AND` per row, in slices (see KEY_CHUNK). Never let a
+    // `OR` of one `AND` per row, in slices of STATEMENT_CHUNK keys. Never let a
     // slice collapse to a bare `Condition::any()` with no clauses: that
     // would select the whole table.
     let mut rows = Vec::new();
-    for models in models.chunks(KEY_CHUNK) {
+    for models in models.chunks(crate::STATEMENT_CHUNK) {
         let mut condition = Condition::any();
         for model in models {
             let mut row = Condition::all();
