@@ -305,6 +305,94 @@ where
     Ok(())
 }
 
+/// Record that one row was read.
+///
+/// SeaORM has no read hooks, so a read is recorded only when the application
+/// marks it: call this after fetching a row whose access belongs in the
+/// trail (opening a record to view it is the typical case). The record is
+/// an event, not a state: it stores the action, the row, the actor and the
+/// request, with no before or after snapshot of the row itself.
+///
+/// `comment` says why the read happened, in the caller's words; it is what
+/// tells a deliberate viewing apart from a row surfacing in search results.
+/// `fetched` optionally records what the read exposed: a JSON object whose
+/// keys name the columns, stored as the record's after content. The values
+/// are the caller's choice (the observed values, or `null` for
+/// columns-only). Keys named by the entity's
+/// [`redacted_columns`](Auditable::redacted_columns) or
+/// [`excluded_columns`](Auditable::excluded_columns) are stripped before
+/// storing, so this path cannot carry credential material or excluded
+/// columns into the trail either.
+///
+/// A scope is required, as for any audit row, and the call fails outside
+/// one rather than writing an unattributed record.
+///
+/// # Errors
+///
+/// Returns an error when there is no audit scope, when the model's audit
+/// id cannot be taken, or when the database does.
+pub async fn record_read<E, C>(
+    db: &C,
+    model: &E::Model,
+    comment: Option<&str>,
+    fetched: Option<Json>,
+) -> Result<(), DbErr>
+where
+    E: Auditable,
+    E::Model: Serialize,
+    C: ConnectionTrait,
+{
+    record_reads::<E, C>(db, std::slice::from_ref(model), comment, fetched).await
+}
+
+/// Record that rows were read, in one audit statement.
+///
+/// The batch form of [`record_read`], for a set of rows exposed together:
+/// the page of search results actually displayed, not every row the search
+/// matched. `comment` and `fetched` are stored on every record in the
+/// batch, so a batch `fetched` should name columns with `null` values;
+/// per-row values belong to single [`record_read`] calls.
+///
+/// # Errors
+///
+/// Returns an error when there is no audit scope, when a model's audit id
+/// cannot be taken, or when the database does.
+pub async fn record_reads<E, C>(
+    db: &C,
+    models: &[E::Model],
+    comment: Option<&str>,
+    fetched: Option<Json>,
+) -> Result<(), DbErr>
+where
+    E: Auditable,
+    E::Model: Serialize,
+    C: ConnectionTrait,
+{
+    // Checked up front, not per record: a batch of zero still fails outside
+    // a scope, so a missing scope is never mistaken for an empty page.
+    with_context(|_| ())?;
+
+    let fetched = fetched.map(|mut payload| {
+        redact::drop_columns(&mut payload, E::redacted_columns());
+        redact::drop_columns(&mut payload, E::excluded_columns());
+        payload
+    });
+
+    let mut records = Vec::with_capacity(models.len());
+    for model in models {
+        let mut record = build_record(
+            E::default().table_name(),
+            E::audit_id(model)?,
+            AuditAction::Read,
+            None,
+            fetched.clone(),
+        )?;
+        record.comment = comment.map(ToOwned::to_owned);
+        records.push(record);
+    }
+    write_records(db, &records).await
+}
+
 /// The `audits` row of one record.
 fn audit_row(record: &AuditRecord) -> audits::ActiveModel {
     audits::ActiveModel {

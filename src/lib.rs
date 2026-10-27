@@ -86,7 +86,8 @@ pub use context::{
     scope_suspended, scope_with_request,
 };
 pub use hooks::{
-    after_delete, after_save, before_delete, before_save, write_record, write_records,
+    after_delete, after_save, before_delete, before_save, record_read, record_reads, write_record,
+    write_records,
 };
 pub use id::AuditId;
 pub use prune::{PruneMode, PrunePolicy, prune};

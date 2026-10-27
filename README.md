@@ -316,6 +316,48 @@ am.update(&txn).await?;   // the write and its audit row, together
 txn.commit().await?;
 ```
 
+## Recording reads
+
+SeaORM has no read hooks, so reads are never audited automatically. When
+an application needs an access log (who saw which record, when, and why),
+it marks the reads itself:
+
+```rust
+// Opening a record to view it.
+seaorm_auto_audit::record_read::<users::Entity>(
+    &db,
+    &user,
+    Some("opened from support ticket 412"),
+    Some(serde_json::json!({"name": null, "email": null})),
+)
+.await?;
+
+// A search: record the page actually displayed, not every match.
+seaorm_auto_audit::record_reads::<users::Entity>(
+    &db,
+    &page,
+    Some("search results"),
+    Some(serde_json::json!({"name": null, "email": null})),
+)
+.await?;
+```
+
+A read record is an event, not a state: action `read`, the row, the actor
+and the request, no before or after snapshot of the row. The optional
+comment, in the caller's words, is what tells a deliberate viewing apart
+from a row surfacing in search results. The optional `fetched` object
+records what the read exposed: its keys name the columns (the values are
+the caller's choice, the observed values or `null` for columns-only), and
+it is stored as the record's after content, with any key named by
+`redacted_columns()` or `excluded_columns()` stripped first. A scope is
+required, as for any audit row.
+
+The limitation is plain: only marked reads are logged. A call site the
+application forgets to mark is a silent gap, and no checker can find it,
+because which reads are sensitive is application knowledge. (A coding
+agent asked to audit the call sites is a reasonable substitute.)
+`modified()` refuses read records: an event has no changes to diff.
+
 ## Pruning
 
 The crate never prunes on write and never schedules anything; removing

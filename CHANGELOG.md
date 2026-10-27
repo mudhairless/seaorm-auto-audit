@@ -19,6 +19,17 @@ listed under Changed.
 
 ### Added
 
+- `record_read` / `record_reads`: record a read of an audited row as an
+  audit event (action `read`), for applications that mark sensitive reads
+  themselves, since SeaORM has no read hooks. A scope is required. The
+  record stores no snapshot; an optional comment (the new `comment`
+  column) says why the read happened, and an optional caller-supplied
+  `fetched` object is stored as the after content, its keys naming the
+  exposed columns, with keys named by `redacted_columns()` or
+  `excluded_columns()` stripped before storing. `modified()` rejects
+  read records.
+
+
 - `prune(db, policy, mode)`: standalone pruning of the `audits` table.
   A `PrunePolicy` keeps the latest N audits per (table, id) and/or drops
   audits older than an age; the rules combine as a union, and a policy

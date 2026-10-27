@@ -15,8 +15,9 @@ macro_rules! real_database_suite {
             };
             use seaorm_auto_audit::{
                 RequestMetadata, delete_by_id as audited_delete_by_id,
-                delete_many as audited_delete_many, insert_many as audited_insert_many, scope,
-                scope_with_request, update_many as audited_update_many,
+                delete_many as audited_delete_many, insert_many as audited_insert_many,
+                record_read as audited_record_read, scope, scope_with_request,
+                update_many as audited_update_many,
             };
             use serde_json::json;
 
@@ -71,6 +72,59 @@ macro_rules! real_database_suite {
                 assert!(
                     after.get("password_hash").is_none(),
                     "the credential is never stored: {after}"
+                );
+            }
+
+            #[tokio::test]
+            async fn a_read_is_recorded_in_a_real_database() {
+                let Some(db) = database().await else {
+                    return;
+                };
+                let id = new_key();
+                let actor = new_key();
+
+                let txn = db.begin().await.expect("the transaction should start");
+                scope(Some(actor.clone().into()), async {
+                    let saved = ActiveModel {
+                        id: Set(id.clone()),
+                        name: Set("Ada".to_owned()),
+                        email: Set(Some("ada@example.com".to_owned())),
+                        password_hash: Set(Some("hash-before".to_owned())),
+                        age: Set(36),
+                    }
+                    .insert(&txn)
+                    .await
+                    .expect("the insert should succeed");
+
+                    audited_record_read::<Entity, _>(
+                        &txn,
+                        &saved,
+                        Some("opened from a support ticket"),
+                        Some(json!({"name": null, "password_hash": null})),
+                    )
+                    .await
+                    .expect("the read should be recorded");
+                })
+                .await;
+                txn.commit().await.expect("the transaction should commit");
+
+                let audits = audits_of(&db, &id).await;
+                assert_eq!(audits.len(), 2, "the write and the read");
+
+                let read = audits
+                    .iter()
+                    .find(|audit| audit.action == "read")
+                    .expect("a read audit row");
+                assert_eq!(read.updated_by_id, Some(actor.to_string()));
+                assert_eq!(
+                    read.comment.as_deref(),
+                    Some("opened from a support ticket")
+                );
+                assert!(read.before_content.is_none(), "a read has no before");
+                assert_eq!(
+                    read.after_content,
+                    Some(json!({"name": null})),
+                    "the fetched columns, with the credential key stripped"
                 );
             }
 
