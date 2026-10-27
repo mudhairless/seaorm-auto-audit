@@ -308,22 +308,33 @@ where
     Ok(Some(keys))
 }
 
+/// How many key rows one read-back query takes. The condition is an `OR`
+/// of one `AND` per row, so its expression tree grows with the row count,
+/// and SQLite refuses an expression tree deeper than 1000: a bulk
+/// operation over more rows than that failed there with "Expression tree
+/// is too large". The read-backs below go in slices of this many keys.
+const KEY_CHUNK: usize = 256;
+
 /// The rows with the given primary key values.
 async fn select_by_key_values<E, C>(db: &C, keys: &[Vec<Value>]) -> Result<Vec<E::Model>, DbErr>
 where
     E: EntityTrait,
     C: ConnectionTrait,
 {
-    let mut condition = Condition::any();
-    for values in keys {
-        let mut row = Condition::all();
-        for (primary_key, value) in <E::PrimaryKey as Iterable>::iter().zip(values.iter()) {
-            row = row.add(primary_key.into_column().eq(value.clone()));
+    let mut rows = Vec::new();
+    for keys in keys.chunks(KEY_CHUNK) {
+        let mut condition = Condition::any();
+        for values in keys {
+            let mut row = Condition::all();
+            for (primary_key, value) in <E::PrimaryKey as Iterable>::iter().zip(values.iter()) {
+                row = row.add(primary_key.into_column().eq(value.clone()));
+            }
+            condition = condition.add(row);
         }
-        condition = condition.add(row);
+        rows.extend(E::find().filter(condition).all(db).await?);
     }
 
-    E::find().filter(condition).all(db).await
+    Ok(rows)
 }
 
 /// The rows of `models`, read back by primary key.
@@ -336,17 +347,22 @@ where
         return Ok(Vec::new());
     }
 
-    // `OR` of one `AND` per row. Never let this collapse to a bare
-    // `Condition::any()` with no clauses: that would select the whole table.
-    let mut condition = Condition::any();
-    for model in models {
-        let mut row = Condition::all();
-        for primary_key in <E::PrimaryKey as Iterable>::iter() {
-            let column = primary_key.into_column();
-            row = row.add(column.eq(model.get(column)));
+    // `OR` of one `AND` per row, in slices (see KEY_CHUNK). Never let a
+    // slice collapse to a bare `Condition::any()` with no clauses: that
+    // would select the whole table.
+    let mut rows = Vec::new();
+    for models in models.chunks(KEY_CHUNK) {
+        let mut condition = Condition::any();
+        for model in models {
+            let mut row = Condition::all();
+            for primary_key in <E::PrimaryKey as Iterable>::iter() {
+                let column = primary_key.into_column();
+                row = row.add(column.eq(model.get(column)));
+            }
+            condition = condition.add(row);
         }
-        condition = condition.add(row);
+        rows.extend(E::find().filter(condition).all(db).await?);
     }
 
-    E::find().filter(condition).all(db).await
+    Ok(rows)
 }

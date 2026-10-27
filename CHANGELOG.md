@@ -66,6 +66,15 @@ listed under Changed.
 - `scope_suspended`, an explicit scope in which audited writes proceed
   without writing audit rows, for seeders, imports and backfills.
 
+### Fixed
+
+- The bulk wrappers read rows back by primary key in slices of 256. The
+  read-back condition is an `OR` of one `AND` per row, so its expression
+  tree grows with the row count, and past roughly a thousand rows SQLite
+  refused it with "Expression tree is too large", failing the whole bulk
+  operation. Larger batches now take several smaller read-backs.
+
+
 ## [0.4.1] - 2026-10-26
 
 ### Fixed

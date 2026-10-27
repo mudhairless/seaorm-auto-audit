@@ -474,6 +474,15 @@ instead.
   with "no before-state". Writes that happen one after another — including a
   graph save — are unaffected, because each write completes both hooks before
   the next begins.
+- **Two transactions updating the *same* row can fork the trail.** Each
+  transaction's update records the state its own `before_save` read, so if
+  the second transaction read the row before the first one committed, its
+  audit row's `before_content` is that earlier state rather than the first
+  row's `after_content`. Both rows are truthful about what their writer
+  saw; they do not chain. On SQLite the second writer instead waits out
+  the first transaction (the write lock, plus the driver's busy timeout)
+  and reads the committed state, so its rows chain like sequential ones.
+  Updates that do not overlap chain normally. This is characterized in `tests/load.rs` (see below).
 - **Nested `builder().save()` runs the hooks per model.** Children in an object
   graph get audited with the same actor, on the same connection. Keep the graph
   save inside the transaction.
@@ -488,6 +497,13 @@ The suite covers the three write paths against SeaORM's `MockDatabase` with the
 insert path repeated on Postgres, MySQL and SQLite, plus the bulk wrappers, the
 task-local actor and request metadata (including the "no user", "no scope" and
 "no request" flows), the redaction rules, and the coverage checker.
+
+Load and stress tests live in `tests/load.rs` and never run in CI (every
+test is ignored). `./load_test.sh` starts throwaway Postgres and MySQL
+containers and runs them against all three backends: concurrent scopes
+keeping their actors apart, two transactions updating one row, the bulk
+wrappers at scale (`LOAD_N`, default 1000), and the checker over a large
+generated tree.
 
 The full real-database suite runs against each backend, once for a `uuid`
 primary key, once for an integer key and once for a string key, and once for
