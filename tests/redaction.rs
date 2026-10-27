@@ -140,8 +140,10 @@ fn several_columns_are_handled_one_by_one() {
     // The key hash did not: dropped from both sides.
     assert!(before.get("key_hash").is_none());
     assert!(after.get("key_hash").is_none());
-    // The public half of the key stays: it identifies the key.
-    assert_eq!(before["key_prefix"], json!("ftg_"));
+    // The public half of the key did not change, so it is dropped like
+    // every other unchanged column.
+    assert!(before.get("key_prefix").is_none());
+    assert!(after.get("key_prefix").is_none());
 }
 
 #[test]
@@ -153,4 +155,35 @@ fn a_column_in_neither_snapshot_is_left_alone() {
 
     assert_eq!(before, json!({"name": "Ada"}));
     assert_eq!(after, json!({"name": "Grace"}));
+}
+
+#[test]
+fn unchanged_plain_columns_are_dropped_and_changed_ones_kept() {
+    let mut before = json!({"id": 1, "name": "Ada", "age": 36, "email": null});
+    let mut after = json!({"id": 1, "name": "Grace", "age": 36, "email": null});
+
+    reconcile(&mut before, &mut after, &[]);
+
+    assert_eq!(before, json!({"name": "Ada"}));
+    assert_eq!(after, json!({"name": "Grace"}));
+}
+
+#[test]
+fn a_pair_with_no_changes_is_empty() {
+    let mut before = json!({"name": "Ada", "password_hash": "same"});
+    let mut after = json!({"name": "Ada", "password_hash": "same"});
+
+    reconcile(&mut before, &mut after, &["password_hash"]);
+
+    assert_eq!(before, json!({}));
+    assert_eq!(after, json!({}));
+    assert!(seaorm_auto_audit::redact::holds_no_change(&before, &after));
+}
+
+#[test]
+fn a_pair_with_a_change_holds_a_change() {
+    let before = json!({"name": "Ada"});
+    let after = json!({"name": "Grace"});
+
+    assert!(!seaorm_auto_audit::redact::holds_no_change(&before, &after));
 }

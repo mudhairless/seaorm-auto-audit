@@ -15,6 +15,13 @@
 //! but looks like a no-op, and nothing says the password was the thing that
 //! moved. With the rules above, a redacted column present in an audit row
 //! means it changed, and no audit row ever holds a hash.
+//!
+//! The same principle applies to every column of an update, redacted or not:
+//! a value that did not change carries no information about the update, so an
+//! update's snapshots hold only the columns that changed. Creates and deletes
+//! keep the full row, because there the whole row is the change. An update
+//! that changed nothing reconciles to two empty snapshots, and the caller
+//! writes no audit row for it.
 
 use serde_json::Value as Json;
 
@@ -33,11 +40,18 @@ pub fn drop_columns(snapshot: &mut Json, columns: &[&str]) {
     }
 }
 
-/// Reconcile the redacted columns of a before/after pair.
+/// Reconcile a before/after pair for storage as an update.
 ///
-/// A column whose raw values are equal is dropped from both snapshots. A column
-/// whose raw values differ is written as [`REDACTED`] on both sides, so the
-/// audit row shows that the column moved without showing what it moved to.
+/// The redacted columns are handled first, while both raw values are still
+/// present: a redacted column whose raw values are equal is dropped from both
+/// snapshots, and one whose raw values differ is written as [`REDACTED`] on
+/// both sides, so the audit row shows that the column moved without showing
+/// what it moved to.
+///
+/// Every other column is then held to the same standard: a column whose
+/// values are equal on both sides did not change, so it is dropped from both.
+/// A column present on only one side is a change and stays. What remains in
+/// the pair is exactly the change the update made.
 pub fn reconcile(before: &mut Json, after: &mut Json, columns: &[&str]) {
     for column in columns {
         let before_value = before.get(column).cloned();
@@ -57,6 +71,31 @@ pub fn reconcile(before: &mut Json, after: &mut Json, columns: &[&str]) {
             }
         }
     }
+
+    let (Some(before_object), Some(after_object)) = (before.as_object(), after.as_object()) else {
+        return;
+    };
+    let unchanged: Vec<String> = before_object
+        .iter()
+        .filter(|(column, value)| {
+            !columns.contains(&column.as_str()) && after_object.get(*column) == Some(*value)
+        })
+        .map(|(column, _)| column.clone())
+        .collect();
+    for column in &unchanged {
+        remove(before, column);
+        remove(after, column);
+    }
+}
+
+/// Whether a reconciled pair holds no change at all: both snapshots are
+/// empty objects. An update that reconciles to this is not written as an
+/// audit row.
+pub fn holds_no_change(before: &Json, after: &Json) -> bool {
+    fn is_empty(snapshot: &Json) -> bool {
+        snapshot.as_object().is_some_and(|object| object.is_empty())
+    }
+    is_empty(before) && is_empty(after)
 }
 
 /// Remove one column from a snapshot, if the snapshot is an object.
