@@ -270,6 +270,11 @@ pub(crate) fn build_record(
 /// This is also the entry point for writes that bypass the hooks on purpose —
 /// a bulk update that needs its own audit row, for instance. See the coverage
 /// note in the README.
+///
+/// The record is stored as given. Redaction is the caller's on this path:
+/// the function has no entity to ask which columns are redacted, so a
+/// caller building content from a row applies [`crate::redact`] first, as
+/// the hooks and the bulk wrappers do.
 pub async fn write_record<C>(db: &C, record: AuditRecord) -> Result<(), DbErr>
 where
     C: ConnectionTrait,

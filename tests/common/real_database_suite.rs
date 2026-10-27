@@ -129,6 +129,59 @@ macro_rules! real_database_suite {
             }
 
             #[tokio::test]
+            async fn a_save_is_audited_and_the_credential_is_never_stored() {
+                let Some(db) = database().await else {
+                    return;
+                };
+                let id = new_key();
+                let actor = new_key();
+
+                let txn = db.begin().await.expect("the transaction should start");
+                scope(Some(actor.clone().into()), async {
+                    ActiveModel {
+                        id: Set(id.clone()),
+                        name: Set("Ada".to_owned()),
+                        email: Set(Some("ada@example.com".to_owned())),
+                        password_hash: Set(Some("hash-before".to_owned())),
+                        age: Set(36),
+                    }
+                    .insert(&txn)
+                    .await
+                    .expect("the seed insert should succeed");
+
+                    // `save` with the key fully `Set` takes the update branch.
+                    ActiveModel {
+                        id: Set(id.clone()),
+                        name: Set("Grace".to_owned()),
+                        email: Set(Some("ada@example.com".to_owned())),
+                        password_hash: Set(Some("hash-after".to_owned())),
+                        age: Set(36),
+                    }
+                    .save(&txn)
+                    .await
+                    .expect("the save should succeed");
+                })
+                .await;
+                txn.commit().await.expect("the transaction should commit");
+
+                let audits = audits_of(&db, &id).await;
+                let update = audits
+                    .iter()
+                    .find(|audit| audit.action == "update")
+                    .expect("an audit row for the save");
+                let before = update.before_content.as_ref().expect("a before");
+                let after = update.after_content.as_ref().expect("an after");
+                assert_eq!(before["password_hash"], json!(seaorm_auto_audit::REDACTED));
+                assert_eq!(after["password_hash"], json!(seaorm_auto_audit::REDACTED));
+                assert_eq!(after["name"], json!("Grace"));
+                let stored = format!("{before}{after}");
+                assert!(
+                    !stored.contains("hash-before") && !stored.contains("hash-after"),
+                    "neither hash is ever stored: {stored}"
+                );
+            }
+
+            #[tokio::test]
             async fn an_update_records_the_before_state() {
                 let Some(db) = database().await else {
                     return;
@@ -697,7 +750,7 @@ audited_delete_many::<Entity, _>(&txn, filter)
                         id: Set(id.clone()),
                         name: Set("Ada".to_owned()),
                         email: Set(None),
-                        password_hash: Set(None),
+                        password_hash: Set(Some("hash-before".to_owned())),
                         age: Set(36),
                     }
                     .insert(&txn)
@@ -722,6 +775,10 @@ audited_delete_many::<Entity, _>(&txn, filter)
                 assert!(delete.after_content.is_none(), "a delete has no after");
                 let before = delete.before_content.as_ref().expect("a before");
                 assert_eq!(before["name"], json!("Ada"));
+                assert!(
+                    before.get("password_hash").is_none(),
+                    "the credential is never stored: {before}"
+                );
             }
         }
     };
