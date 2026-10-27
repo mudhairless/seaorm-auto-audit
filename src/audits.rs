@@ -16,6 +16,7 @@
 //! | `ip_address`      | the client address, when the change came from a request |
 //! | `url`             | the request URL, when there was a request               |
 //! | `user_agent`      | the request's `User-Agent`, when it had one             |
+//! | `comment`         | why a read happened (`null` for writes)                 |
 //!
 //! `updated_by_id` and the three request columns are nullable on purpose:
 //! non-HTTP writes (background jobs, webhooks, the signup bootstrap) have no
@@ -45,7 +46,7 @@ pub struct Model {
     /// The primary key of the audited row, in its canonical text form.
     #[sea_orm(column_type = "Text")]
     pub auditable_id: String,
-    /// `create`, `update` or `delete`.
+    /// `create`, `update`, `delete` or `read`.
     #[sea_orm(column_type = "Text")]
     pub action: String,
     /// The audited row before the change. `None` for creates.
@@ -66,6 +67,10 @@ pub struct Model {
     /// The `User-Agent` of the request. `None` for machine-made changes.
     #[sea_orm(column_type = "Text", nullable)]
     pub user_agent: Option<String>,
+    /// Why a read happened. `None` for writes, and for reads the caller
+    /// did not explain.
+    #[sea_orm(column_type = "Text", nullable)]
+    pub comment: Option<String>,
 }
 
 impl Model {
@@ -82,8 +87,8 @@ impl Model {
     /// # Errors
     ///
     /// Returns an error when the stored action is not `create`, `update` or
-    /// `delete`: a record of any other kind (a read event, say) has no column
-    /// changes to report.
+    /// `delete`: a read record has no column changes to report, and an
+    /// action this version of the crate does not know cannot be diffed.
     pub fn modified(&self) -> Result<Vec<ColumnChange>, DbErr> {
         let action = AuditAction::from_str(&self.action)
             .map_err(|unknown| DbErr::Custom(format!("seaorm-auto-audit: {unknown}")))?;
@@ -110,6 +115,11 @@ impl Model {
                         after: None,
                     }));
                 }
+            }
+            AuditAction::Read => {
+                return Err(DbErr::Custom(
+                    "seaorm-auto-audit: a read record has no changes to diff".to_owned(),
+                ));
             }
             AuditAction::Update => {
                 let marker = Json::String(REDACTED.to_owned());

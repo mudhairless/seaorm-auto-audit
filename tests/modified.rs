@@ -21,6 +21,7 @@ fn stored(action: &str, before: Option<Json>, after: Option<Json>) -> Model {
         ip_address: None,
         url: None,
         user_agent: None,
+        comment: None,
     }
 }
 

@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS audits (
     ip_address      TEXT,
     url             TEXT,
     user_agent      TEXT,
+    -- Why a read happened. NULL for writes.
+    comment         TEXT,
 
     -- Looking up the history of one row: "what happened to this user?".
     INDEX audits_auditable_idx (auditable_table, auditable_id),
@@ -31,5 +33,5 @@ CREATE TABLE IF NOT EXISTS audits (
     -- Reading the trail in order.
     INDEX audits_created_at_idx (created_at),
 
-    CONSTRAINT audits_action_check CHECK (action IN ('create', 'update', 'delete'))
+    CONSTRAINT audits_action_check CHECK (action IN ('create', 'update', 'delete', 'read'))
 );

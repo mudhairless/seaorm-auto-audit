@@ -8,6 +8,15 @@ listed under Changed.
 
 ## [Unreleased]
 
+### Changed
+
+- The `audits` table gains a nullable `comment` column, and its action
+  check now allows `read`. Existing users must add the column to their
+  `audits` table (`ALTER TABLE audits ADD COLUMN comment TEXT`, in their
+  database's spelling) and widen the action check to include `'read'`
+  before using the read-recording helpers; the shipped `sql/setup.*.sql`
+  files carry the new shape for fresh installs.
+
 ### Added
 
 - `prune(db, policy, mode)`: standalone pruning of the `audits` table.

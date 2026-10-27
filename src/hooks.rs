@@ -256,6 +256,7 @@ pub(crate) fn build_record(
         ip_address: None,
         url: None,
         user_agent: None,
+        comment: None,
     }
     .with_request_metadata(request.as_ref()))
 }
@@ -318,6 +319,7 @@ fn audit_row(record: &AuditRecord) -> audits::ActiveModel {
         ip_address: Set(record.ip_address.clone()),
         url: Set(record.url.clone()),
         user_agent: Set(record.user_agent.clone()),
+        comment: Set(record.comment.clone()),
     }
 }
 

@@ -20,8 +20,10 @@ CREATE TABLE IF NOT EXISTS audits (
     ip_address      text,
     url             text,
     user_agent      text,
+    -- Why a read happened. NULL for writes.
+    comment         text,
 
-    CONSTRAINT audits_action_check CHECK (action IN ('create', 'update', 'delete'))
+    CONSTRAINT audits_action_check CHECK (action IN ('create', 'update', 'delete', 'read'))
 );
 
 -- Looking up the history of one row: "what happened to this user?".

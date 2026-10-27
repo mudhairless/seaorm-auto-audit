@@ -15,6 +15,8 @@ pub enum AuditAction {
     Update,
     /// The row was deleted.
     Delete,
+    /// The row was read, and the read was recorded on purpose.
+    Read,
 }
 
 impl AuditAction {
@@ -24,6 +26,7 @@ impl AuditAction {
             Self::Create => "create",
             Self::Update => "update",
             Self::Delete => "delete",
+            Self::Read => "read",
         }
     }
 }
@@ -48,6 +51,7 @@ impl std::str::FromStr for AuditAction {
             "create" => Ok(Self::Create),
             "update" => Ok(Self::Update),
             "delete" => Ok(Self::Delete),
+            "read" => Ok(Self::Read),
             other => Err(UnknownAction(other.to_owned())),
         }
     }
@@ -99,6 +103,9 @@ pub struct AuditRecord {
     pub url: Option<String>,
     /// The `User-Agent` of the request. `None` for machine-made changes.
     pub user_agent: Option<String>,
+    /// Why a read happened. `None` for writes, and for reads the caller
+    /// did not explain.
+    pub comment: Option<String>,
 }
 
 impl AuditRecord {
@@ -128,6 +135,7 @@ impl AuditRecord {
             ip_address: None,
             url: None,
             user_agent: None,
+            comment: None,
         }
     }
 

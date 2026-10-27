@@ -12,14 +12,16 @@ CREATE TABLE IF NOT EXISTS audits (
     created_at      TEXT        NOT NULL DEFAULT (datetime('now')),
     auditable_table TEXT        NOT NULL,
     auditable_id    TEXT        NOT NULL,
-    action          TEXT        NOT NULL CHECK (action IN ('create', 'update', 'delete')),
+    action          TEXT        NOT NULL CHECK (action IN ('create', 'update', 'delete', 'read')),
     before_content  TEXT,
     after_content   TEXT,
     updated_by_id   TEXT,
     -- Request details. NULL when the change did not come from a request.
     ip_address      TEXT,
     url             TEXT,
-    user_agent      TEXT
+    user_agent      TEXT,
+    -- Why a read happened. NULL for writes.
+    comment         TEXT
 );
 
 -- Looking up the history of one row: "what happened to this user?".

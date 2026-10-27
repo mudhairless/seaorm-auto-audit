@@ -42,6 +42,7 @@ async fn insert_audit(db: &DatabaseConnection, auditable_id: &str, created_at: &
         ip_address: Set(None),
         url: Set(None),
         user_agent: Set(None),
+        comment: Set(None),
     }
     .insert(db)
     .await
