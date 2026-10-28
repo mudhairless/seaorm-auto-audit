@@ -231,3 +231,21 @@ async fn delete_at_scale_removes_more_rows_than_one_statement_allows() {
     assert_eq!(removed.len(), 40_000);
     assert_eq!(audit_count(&db).await, 0);
 }
+
+#[tokio::test]
+async fn an_age_too_large_to_represent_is_refused() {
+    let (_dir, db) = fresh_db().await;
+
+    let error = prune(
+        &db,
+        &PrunePolicy::older_than(Duration::MAX),
+        PruneMode::DryRun,
+    )
+    .await
+    .expect_err("an unrepresentable age must be refused");
+
+    assert!(
+        error.to_string().contains("too large to represent"),
+        "the error names the problem: {error}"
+    );
+}

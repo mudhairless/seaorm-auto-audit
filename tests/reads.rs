@@ -207,3 +207,24 @@ async fn record_reads_records_a_page_in_one_statement() {
         "the exposed columns, with the redacted key stripped"
     );
 }
+
+#[tokio::test]
+async fn a_fetched_value_that_is_not_an_object_is_rejected() {
+    let id = Uuid::new_v4();
+    let db = mock_db();
+
+    let result = scope(None, async {
+        record_read::<Entity, _>(&db, &chart(id), None, Some(json!(["name", "diagnosis"]))).await
+    })
+    .await;
+
+    let error = result.expect_err("a non-object fetched value must be refused");
+    assert!(
+        error
+            .to_string()
+            .contains("`fetched` must be a JSON object"),
+        "{error}"
+    );
+    let log = db.into_transaction_log();
+    assert!(log.is_empty(), "no statement should have run");
+}

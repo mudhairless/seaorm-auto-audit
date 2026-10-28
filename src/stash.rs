@@ -196,3 +196,160 @@ impl Stash {
         self.entries.remove(key)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::value_to_json;
+    use chrono::{FixedOffset, Local, NaiveDate, TimeZone, Utc};
+    use sea_orm::Value;
+    use serde_json::json;
+    use uuid::Uuid;
+
+    // The match's fallback arm (decimals, database enums, `time` and
+    // `jiff` values, big decimals) cannot be constructed in this
+    // build: those `Value` variants sit behind dependency features
+    // the crate does not enable. It stays a named accept. Every arm
+    // that can be constructed is pinned here, because every snapshot
+    // on every write path routes through this conversion.
+
+    #[test]
+    fn the_conversion_keeps_numbers_and_text_faithful() {
+        assert_eq!(value_to_json(Value::Bool(Some(true))), json!(true));
+        assert_eq!(
+            value_to_json(Value::TinyInt(Some(-5))),
+            serde_json::Value::from(-5i64)
+        );
+        assert_eq!(
+            value_to_json(Value::SmallInt(Some(-6))),
+            serde_json::Value::from(-6i64)
+        );
+        assert_eq!(
+            value_to_json(Value::Int(Some(7))),
+            serde_json::Value::from(7i64)
+        );
+        assert_eq!(
+            value_to_json(Value::BigInt(Some(8))),
+            serde_json::Value::from(8i64)
+        );
+        assert_eq!(
+            value_to_json(Value::TinyUnsigned(Some(5))),
+            serde_json::Value::from(5u64)
+        );
+        assert_eq!(
+            value_to_json(Value::SmallUnsigned(Some(6))),
+            serde_json::Value::from(6u64)
+        );
+        assert_eq!(
+            value_to_json(Value::Unsigned(Some(7))),
+            serde_json::Value::from(7u64)
+        );
+        assert_eq!(
+            value_to_json(Value::BigUnsigned(Some(8))),
+            serde_json::Value::from(8u64)
+        );
+        assert_eq!(
+            value_to_json(Value::Float(Some(1.5f32))),
+            serde_json::Value::from(1.5f64)
+        );
+        assert_eq!(
+            value_to_json(Value::Double(Some(2.5))),
+            serde_json::Value::from(2.5f64)
+        );
+        assert_eq!(
+            value_to_json(Value::String(Some("ada".to_owned()))),
+            json!("ada")
+        );
+        assert_eq!(value_to_json(Value::Char(Some('x'))), json!("x"));
+        assert_eq!(
+            value_to_json(Value::Uuid(Some(Uuid::from_u128(42)))),
+            json!("00000000-0000-0000-0000-00000000002a")
+        );
+    }
+
+    #[test]
+    fn the_conversion_turns_non_finite_floats_into_null() {
+        assert_eq!(
+            value_to_json(Value::Double(Some(f64::NAN))),
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            value_to_json(Value::Double(Some(f64::INFINITY))),
+            serde_json::Value::Null
+        );
+        assert_eq!(
+            value_to_json(Value::Float(Some(f32::NEG_INFINITY))),
+            serde_json::Value::Null
+        );
+    }
+
+    #[test]
+    fn the_conversion_stores_bytes_as_numbers_and_passes_json_through() {
+        assert_eq!(
+            value_to_json(Value::Bytes(Some(vec![0, 127, 255]))),
+            json!([0, 127, 255])
+        );
+        assert_eq!(
+            value_to_json(Value::Json(Some(Box::new(json!({"a": 1}))))),
+            json!({"a": 1})
+        );
+    }
+
+    #[test]
+    fn the_conversion_formats_dates_and_times_as_iso_strings() {
+        let date = NaiveDate::from_ymd_opt(2026, 10, 28).expect("a real date");
+        let moment = date
+            .and_hms_nano_opt(3, 4, 5, 123_456_000)
+            .expect("a real time");
+
+        assert_eq!(
+            value_to_json(Value::ChronoDate(Some(date))),
+            json!("2026-10-28")
+        );
+        assert_eq!(
+            value_to_json(Value::ChronoTime(Some(moment.time()))),
+            json!("03:04:05.123456")
+        );
+        assert_eq!(
+            value_to_json(Value::ChronoDateTime(Some(moment))),
+            json!("2026-10-28T03:04:05.123456")
+        );
+        assert_eq!(
+            value_to_json(Value::ChronoDateTimeUtc(Some(
+                Utc.from_utc_datetime(&moment)
+            ))),
+            json!("2026-10-28T03:04:05.123456+00:00")
+        );
+        assert_eq!(
+            value_to_json(Value::ChronoDateTimeWithTimeZone(Some(
+                FixedOffset::east_opt(2 * 3600)
+                    .expect("a real offset")
+                    .from_local_datetime(&moment)
+                    .single()
+                    .expect("an unambiguous time")
+            ))),
+            json!("2026-10-28T03:04:05.123456+02:00")
+        );
+
+        // The local offset is the machine's own, so only the moment
+        // itself is pinned here.
+        let local = value_to_json(Value::ChronoDateTimeLocal(Some(
+            Local
+                .from_local_datetime(&moment)
+                .single()
+                .expect("an unambiguous time"),
+        )));
+        let text = local.as_str().expect("a timestamp string");
+        assert!(
+            text.starts_with("2026-10-28T03:04:05.123456"),
+            "the moment, in local time: {text}"
+        );
+    }
+
+    #[test]
+    fn the_conversion_maps_absent_values_to_null() {
+        assert_eq!(value_to_json(Value::Bool(None)), serde_json::Value::Null);
+        assert_eq!(value_to_json(Value::Int(None)), serde_json::Value::Null);
+        assert_eq!(value_to_json(Value::String(None)), serde_json::Value::Null);
+        assert_eq!(value_to_json(Value::Json(None)), serde_json::Value::Null);
+    }
+}
