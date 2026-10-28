@@ -52,6 +52,14 @@ use crate::stash::to_json;
 /// the rows in the insert statement; MySQL does not support that, so every
 /// model must carry an explicit primary key and the rows are selected back by
 /// it.
+///
+/// # Errors
+///
+/// [`NO_SCOPE`](crate::NO_SCOPE) outside an audit scope (unless
+/// suspended). On MySQL, fails when any model lacks an explicit
+/// primary key. Also fails when
+/// [`Auditable::audit_id`] rejects a
+/// row, and with the database's own errors.
 pub async fn insert_many<E, C, I>(db: &C, models: I) -> Result<Vec<E::Model>, DbErr>
 where
     E: Auditable,
@@ -131,6 +139,13 @@ where
 /// The primary key itself cannot be changed this way: the trail is keyed by
 /// the row's existing key, so a `values` model that sets a primary key column
 /// is rejected before anything runs.
+///
+/// # Errors
+///
+/// [`NO_SCOPE`](crate::NO_SCOPE) outside an audit scope (unless
+/// suspended), when `values` sets a primary key column, when
+/// [`Auditable::audit_id`] rejects a
+/// row, and with the database's own errors.
 pub async fn update_many<E, C>(
     db: &C,
     filter: Condition,
@@ -224,6 +239,18 @@ where
 }
 
 /// Delete every row matching `filter` and audit each one.
+///
+/// The matching rows are read first, inside the caller's transaction,
+/// and each becomes one `delete` audit row holding the row's full
+/// before state. A filter that matches nothing deletes nothing,
+/// writes no audit rows, and succeeds.
+///
+/// # Errors
+///
+/// [`NO_SCOPE`](crate::NO_SCOPE) outside an audit scope (unless
+/// suspended), when
+/// [`Auditable::audit_id`] rejects a
+/// row, and with the database's own errors.
 pub async fn delete_many<E, C>(db: &C, filter: Condition) -> Result<DeleteResult, DbErr>
 where
     E: Auditable,
@@ -266,6 +293,11 @@ where
 ///
 /// Takes the same argument as `Entity::delete_by_id`: the primary key value,
 /// or a tuple for a composite key.
+///
+/// # Errors
+///
+/// As [`delete_many`], and when the key value carries more values
+/// than the entity has key columns.
 pub async fn delete_by_id<E, C, T>(db: &C, id: T) -> Result<DeleteResult, DbErr>
 where
     E: Auditable,

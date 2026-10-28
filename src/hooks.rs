@@ -46,6 +46,15 @@ use crate::stash::{StashKey, Stashed, to_json};
 ///
 /// The extra `SELECT` runs on the same connection handle as the write, so it
 /// joins the write's transaction.
+///
+/// # Errors
+///
+/// [`NO_SCOPE`](crate::NO_SCOPE) when no audit scope is active and
+/// auditing is not suspended. Also fails when the active model
+/// carries no primary key, when the entity's
+/// [`Auditable::audit_id`] rejects the
+/// row, and with the database's own errors from reading the current
+/// row.
 pub async fn before_save<E, C>(
     am: E::ActiveModel,
     db: &C,
@@ -86,6 +95,16 @@ where
 /// redacted columns reconciled so that a credential change shows up as a
 /// change without showing the credential. An update that changed nothing
 /// writes no audit row.
+///
+/// # Errors
+///
+/// [`NO_SCOPE`](crate::NO_SCOPE) when the write happened outside an
+/// audit scope (the before-state lives there), when an update finds
+/// no parked before-state because the write did not go through
+/// [`before_save`], when
+/// [`Auditable::audit_id`] rejects the
+/// row, and with the database's own errors from writing the audit
+/// row.
 pub async fn after_save<E, C>(model: E::Model, db: &C, insert: bool) -> Result<E::Model, DbErr>
 where
     E: Auditable,
@@ -157,6 +176,15 @@ where
 ///
 /// The snapshot is parked rather than written: writing the audit row here
 /// would log a change that then fails to happen if the delete fails.
+///
+/// # Errors
+///
+/// [`NO_SCOPE`](crate::NO_SCOPE) when no audit scope is active and
+/// auditing is not suspended. Also fails when the active model
+/// carries no primary key, when the entity's
+/// [`Auditable::audit_id`] rejects the
+/// row, and with the database's own errors from reading the current
+/// row.
 pub async fn before_delete<E, C>(am: E::ActiveModel, db: &C) -> Result<E::ActiveModel, DbErr>
 where
     E: Auditable,
@@ -183,6 +211,13 @@ where
 /// Record a delete that just happened.
 ///
 /// The audit row holds the state the row had and no "after".
+///
+/// # Errors
+///
+/// [`NO_SCOPE`](crate::NO_SCOPE) when the delete happened outside an
+/// audit scope, when no parked before-state is found because the
+/// delete did not go through [`before_delete`], and with the
+/// database's own errors from writing the audit row.
 pub async fn after_delete<E, C>(am: E::ActiveModel, db: &C) -> Result<E::ActiveModel, DbErr>
 where
     E: Auditable,
@@ -273,6 +308,11 @@ pub(crate) fn build_record(
 /// the function has no entity to ask which columns are redacted, so a
 /// caller building content from a row applies [`crate::redact`] first, as
 /// the hooks and the bulk wrappers do.
+///
+/// # Errors
+///
+/// Only the database's errors. There is deliberately no scope check
+/// and no redaction on this path; see above.
 pub async fn write_record<C>(db: &C, record: AuditRecord) -> Result<(), DbErr>
 where
     C: ConnectionTrait,
@@ -292,6 +332,11 @@ where
 /// statement instead of N round trips. An empty batch writes nothing. The
 /// rows go through the same connection handle as the writes they describe,
 /// exactly as with [`write_record`].
+///
+/// # Errors
+///
+/// Only the database's errors, as with [`write_record`]. An empty
+/// batch is not an error.
 pub async fn write_records<C>(db: &C, records: &[AuditRecord]) -> Result<(), DbErr>
 where
     C: ConnectionTrait,

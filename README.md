@@ -371,6 +371,9 @@ because which reads are sensitive is application knowledge. (A coding
 agent asked to audit the call sites is a reasonable substitute.)
 `modified()` refuses read records: an event has no changes to diff.
 
+A step-by-step version of the call-site audit for a coding agent ships
+in [`skills/find-unmarked-reads`](skills/find-unmarked-reads/SKILL.md).
+
 ## Pruning
 
 The crate never prunes on write and never schedules anything; removing
@@ -434,6 +437,37 @@ Comments and string literals are blanked before matching, so documenting the
 forbidden styles does not trip the check. `--allow <path>` exempts a directory,
 a file, or a bare file name such as `audit.rs`.
 
+### The checker in CI
+
+Run the checker as a build gate, against the tree that holds the audited
+tables:
+
+```console
+$ cargo run -p seaorm-auto-audit --bin seaorm-auto-audit-check -- backend/src
+```
+
+(In a project where the crate is not a workspace member, `cargo install
+seaorm-auto-audit` puts the same binary on the PATH as
+`seaorm-auto-audit-check`.)
+
+The exit code is the contract:
+
+| code | meaning |
+|------|---------|
+| 0 | clean: the roots were scanned and no forbidden call site was found |
+| 1 | at least one forbidden call site was found |
+| 2 | the check itself failed: bad arguments, a root that does not exist or cannot be read, or a root with no Rust sources in it |
+
+Code 2 matters as much as code 1. A root that scans nothing used to pass
+as clean; it now fails the build, because a gate that checked nothing is
+worse than no gate. In GitHub Actions the gate is one step in the job
+that builds the application:
+
+```yaml
+- name: Audit coverage check
+  run: cargo run -p seaorm-auto-audit --bin seaorm-auto-audit-check -- backend/src
+```
+
 ### The bulk wrappers
 
 `insert_many`, `update_many`, `delete_many` and `delete_by_id` mirror the SeaORM
@@ -495,6 +529,9 @@ instead.
   graph get audited with the same actor, on the same connection. Keep the graph
   save inside the transaction.
 
+A review checklist for a coding agent ships in
+[`skills/audit-usage-gotchas`](skills/audit-usage-gotchas/SKILL.md).
+
 ## Tests
 
 ```console
@@ -538,6 +575,14 @@ $ DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres \
 
 The SQLite tests default to a temporary file-backed database when
 `SQLITE_DATABASE_URL` is unset, so they always run.
+
+## Versioning
+
+From 1.0, this crate follows Semantic Versioning: the public API
+documented here and in the rustdoc is the contract, and breaking it
+takes a major release. The minimum supported Rust version tracks
+the dependencies, in practice SeaORM's; raising it is at most a
+minor release and is called out in the changelog when it happens.
 
 ## License
 

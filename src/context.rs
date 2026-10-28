@@ -135,6 +135,11 @@ where
 /// Like the actor scope, suspension is task-local: it does not cross a
 /// `tokio::spawn`. Code spawned inside a suspended scope is audited as
 /// usual (and fails outside an actor scope), not silently suspended.
+///
+/// Suspension lifts the scope requirement and the attribution, not the
+/// bulk wrappers' own guards: `update_many` still refuses to change a
+/// primary key, and `insert_many` on MySQL still needs an explicit
+/// primary key on every model.
 pub async fn scope_suspended<F>(fut: F) -> F::Output
 where
     F: Future,
