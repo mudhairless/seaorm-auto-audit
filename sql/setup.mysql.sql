@@ -5,7 +5,8 @@
 -- change and is NULL for changes nobody is behind (webhooks, background jobs).
 -- The request columns are NULL for the same non-HTTP writes.
 --
--- The table is append-only: nothing updates or deletes an audit row.
+-- The table is append-only: nothing updates an audit row, and the
+-- only delete is `prune`, which removes the rows its policy selects.
 --
 -- The indexes are declared inline because MySQL has no `CREATE INDEX IF NOT
 -- EXISTS`, and this script must be safe to run more than once.
@@ -14,7 +15,7 @@ CREATE TABLE IF NOT EXISTS audits (
     id              BINARY(16)   PRIMARY KEY,
     created_at      TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     auditable_table VARCHAR(255) NOT NULL,
-    auditable_id    VARCHAR(255) NOT NULL,
+    auditable_id    TEXT         NOT NULL,
     action          VARCHAR(10)  NOT NULL,
     before_content  JSON,
     after_content   JSON,
@@ -27,7 +28,7 @@ CREATE TABLE IF NOT EXISTS audits (
     comment         TEXT,
 
     -- Looking up the history of one row: "what happened to this user?".
-    INDEX audits_auditable_idx (auditable_table, auditable_id),
+    INDEX audits_auditable_idx (auditable_table, auditable_id(255)),
     -- Looking up the history of one user: "what did this user change?".
     INDEX audits_updated_by_id_idx (updated_by_id),
     -- Reading the trail in order.

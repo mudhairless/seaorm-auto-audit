@@ -1,7 +1,10 @@
 //! The shared helper: one implementation of the audit behaviour, used by every
 //! auditable entity.
 //!
-//! The four functions here mirror SeaORM's four lifecycle hooks. Per-entity
+//! Four functions here mirror SeaORM's four lifecycle hooks, and four
+//! more (`write_record`, `write_records`, `record_read`, `record_reads`)
+//! write audit rows directly, for the writes and reads the hooks
+//! cannot see. Per-entity
 //! hooks call them and nothing else, so a change to the redaction rules or the
 //! audit row shape is one edit in one file.
 //!
@@ -24,7 +27,6 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectionTrait, DbErr,
     EntityTrait, Iterable, PrimaryKeyToColumn, QueryFilter,
 };
-use serde::Serialize;
 use serde_json::Value as Json;
 
 use crate::auditable::Auditable;
@@ -51,7 +53,6 @@ pub async fn before_save<E, C>(
 ) -> Result<E::ActiveModel, DbErr>
 where
     E: Auditable,
-    E::Model: Serialize,
     C: ConnectionTrait,
 {
     if is_suspended() {
@@ -88,7 +89,6 @@ where
 pub async fn after_save<E, C>(model: E::Model, db: &C, insert: bool) -> Result<E::Model, DbErr>
 where
     E: Auditable,
-    E::Model: Serialize,
     C: ConnectionTrait,
 {
     if is_suspended() {
@@ -160,7 +160,6 @@ where
 pub async fn before_delete<E, C>(am: E::ActiveModel, db: &C) -> Result<E::ActiveModel, DbErr>
 where
     E: Auditable,
-    E::Model: Serialize,
     C: ConnectionTrait,
 {
     if is_suspended() {
@@ -187,7 +186,6 @@ where
 pub async fn after_delete<E, C>(am: E::ActiveModel, db: &C) -> Result<E::ActiveModel, DbErr>
 where
     E: Auditable,
-    E::Model: Serialize,
     C: ConnectionTrait,
 {
     if is_suspended() {
@@ -247,8 +245,8 @@ pub(crate) fn build_record(
     let (updated_by_id, request) = with_context(|ctx| (ctx.user_id(), ctx.request().cloned()))?;
 
     Ok(AuditRecord {
-        table: table.to_owned(),
-        id,
+        auditable_table: table.to_owned(),
+        auditable_id: id,
         action,
         before_content: before,
         after_content: after,
@@ -318,7 +316,8 @@ where
 /// marks it: call this after fetching a row whose access belongs in the
 /// trail (opening a record to view it is the typical case). The record is
 /// an event, not a state: it stores the action, the row, the actor and the
-/// request, with no before or after snapshot of the row itself.
+/// request, with no before snapshot of the row itself. What the read exposed is
+/// a separate, caller-chosen payload; see `fetched` below.
 ///
 /// `comment` says why the read happened, in the caller's words; it is what
 /// tells a deliberate viewing apart from a row surfacing in search results.
@@ -346,7 +345,6 @@ pub async fn record_read<E, C>(
 ) -> Result<(), DbErr>
 where
     E: Auditable,
-    E::Model: Serialize,
     C: ConnectionTrait,
 {
     record_reads::<E, C>(db, std::slice::from_ref(model), comment, fetched).await
@@ -372,12 +370,23 @@ pub async fn record_reads<E, C>(
 ) -> Result<(), DbErr>
 where
     E: Auditable,
-    E::Model: Serialize,
     C: ConnectionTrait,
 {
     // Checked up front, not per record: a batch of zero still fails outside
     // a scope, so a missing scope is never mistaken for an empty page.
     with_context(|_| ())?;
+
+    // The stripping below works by key, so a payload that is not an
+    // object would sail through unstripped. Refuse it instead.
+    if let Some(payload) = &fetched
+        && !payload.is_object()
+    {
+        return Err(DbErr::Custom(
+            "seaorm-auto-audit: `fetched` must be a JSON object whose keys name \
+             the columns the read exposed"
+                .to_owned(),
+        ));
+    }
 
     let fetched = fetched.map(|mut payload| {
         redact::drop_columns(&mut payload, E::redacted_columns());
@@ -405,8 +414,8 @@ fn audit_row(record: &AuditRecord) -> audits::ActiveModel {
     audits::ActiveModel {
         id: Set(uuid::Uuid::now_v7()),
         created_at: Set(chrono::Utc::now().fixed_offset()),
-        auditable_table: Set(record.table.clone()),
-        auditable_id: Set(record.id.clone().into_string()),
+        auditable_table: Set(record.auditable_table.clone()),
+        auditable_id: Set(record.auditable_id.clone().into_string()),
         action: Set(record.action.as_str().to_owned()),
         before_content: Set(record.before_content.clone()),
         after_content: Set(record.after_content.clone()),
@@ -422,7 +431,6 @@ fn audit_row(record: &AuditRecord) -> audits::ActiveModel {
 async fn fetch_row<E, C>(am: &E::ActiveModel, db: &C) -> Result<Option<E::Model>, DbErr>
 where
     E: Auditable,
-    E::Model: Serialize,
     C: ConnectionTrait,
 {
     let mut condition = Condition::all();

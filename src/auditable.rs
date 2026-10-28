@@ -1,7 +1,6 @@
 //! What makes a model auditable.
 
 use sea_orm::{DbErr, EntityTrait, ModelTrait, Value};
-use serde::Serialize;
 
 use crate::id::AuditId;
 
@@ -17,10 +16,7 @@ use crate::id::AuditId;
 ///     }
 /// }
 /// ```
-pub trait Auditable: EntityTrait
-where
-    Self::Model: Serialize,
-{
+pub trait Auditable: EntityTrait {
     /// Columns whose values are never written into an audit record.
     ///
     /// Credential material — password hashes, key hashes — belongs here. A
@@ -28,6 +24,10 @@ where
     /// changed, without saying what it changed to. See [`crate::redact`].
     ///
     /// The default is "nothing is redacted".
+    /// The names are database column names: the column's `column_name`,
+    /// not the Rust field name and not any serde name. Snapshots are
+    /// keyed by column name, and the lists are matched against those
+    /// keys.
     fn redacted_columns() -> &'static [&'static str] {
         &[]
     }
@@ -45,6 +45,10 @@ where
     /// listed in both is excluded; absence wins over the marker.
     ///
     /// The default is "nothing is excluded".
+    /// The names are database column names: the column's `column_name`,
+    /// not the Rust field name and not any serde name. Snapshots are
+    /// keyed by column name, and the lists are matched against those
+    /// keys.
     fn excluded_columns() -> &'static [&'static str] {
         &[]
     }

@@ -15,7 +15,7 @@ use axum::response::Response;
 use axum::routing::get;
 use common::{ActiveModel, insert_bindings};
 use sea_orm::{ActiveModelTrait, ActiveValue::Set, DbBackend, MockDatabase, MockExecResult};
-use seaorm_auto_audit::middleware::{Actor, ClientIp, ClientIpSource};
+use seaorm_auto_audit::middleware::{Actor, ClientIpExtension, ClientIpSource};
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -209,7 +209,7 @@ async fn the_request_details_reach_the_audit_row() {
     // The configured source wins; the local extension is only a fallback.
     request
         .extensions_mut()
-        .insert(ClientIp("198.51.100.9".to_owned()));
+        .insert(ClientIpExtension("198.51.100.9".to_owned()));
 
     let response = app
         .oneshot(request)
@@ -231,9 +231,7 @@ async fn the_request_details_reach_the_audit_row() {
     // x-forwarded-host.
     assert_eq!(
         bindings["url"],
-        sea_orm::Value::String(Some(
-            "https://api.example.com/things/42?tab=history".to_owned()
-        ))
+        sea_orm::Value::String(Some("https://api.example.com/things/42".to_owned()))
     );
     assert_eq!(
         bindings["user_agent"],
@@ -276,9 +274,7 @@ async fn an_absolute_request_uri_is_recorded_as_it_arrived() {
 
     assert_eq!(
         bindings["url"],
-        sea_orm::Value::String(Some(
-            "https://api.example.com/things/42?tab=history".to_owned()
-        ))
+        sea_orm::Value::String(Some("https://api.example.com/things/42".to_owned()))
     );
 }
 
@@ -300,7 +296,7 @@ async fn the_local_client_ip_extension_is_a_fallback() {
     let mut request = Request::builder().uri("/").body(Body::empty()).unwrap();
     request
         .extensions_mut()
-        .insert(ClientIp("203.0.113.7".to_owned()));
+        .insert(ClientIpExtension("203.0.113.7".to_owned()));
 
     let response = app
         .oneshot(request)

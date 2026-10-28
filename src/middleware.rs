@@ -24,7 +24,7 @@
 //! [`axum_client_ip`]: install a [`ClientIpSource`] extension naming the header
 //! the trusted edge sets. The crate does not trust a forwarding header on its
 //! own — a header is only as trustworthy as the proxy that sets it, so that
-//! call belongs to the application. Without a configured source, a [`ClientIp`]
+//! call belongs to the application. Without a configured source, a [`ClientIpExtension`]
 //! extension inserted by the application is used as a fallback, and then the
 //! connection's peer address ([`ConnectInfo`]). If a source is configured and
 //! its header is missing or not an address, no address is recorded instead of
@@ -65,7 +65,7 @@ impl Actor {
 /// [`ClientIpSource`], which names the header the trusted edge sets and keeps
 /// that policy in one place.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ClientIp(pub String);
+pub struct ClientIpExtension(pub String);
 
 /// Scope an audit context around a request, resolving the actor with `resolve`.
 ///
@@ -132,7 +132,7 @@ async fn client_ip(parts: &mut Parts) -> Option<String> {
 
     parts
         .extensions
-        .get::<ClientIp>()
+        .get::<ClientIpExtension>()
         .map(|ip| ip.0.clone())
         .or_else(|| {
             parts
@@ -143,6 +143,11 @@ async fn client_ip(parts: &mut Parts) -> Option<String> {
 }
 
 /// The request URL, made absolute when the host is known.
+///
+/// The query string is never recorded. Query strings carry whatever a
+/// client put there, including access tokens and password-reset links,
+/// and an audit trail has no business collecting them; which endpoint
+/// was hit is the part with audit value.
 fn url_of(parts: &Parts) -> String {
     let uri = parts
         .extensions
@@ -153,10 +158,15 @@ fn url_of(parts: &Parts) -> String {
     absolute_url(uri, &parts.headers)
 }
 
-/// `path?query` -> `scheme://host/path?query`, when a host header exists.
+/// `path?query` -> `scheme://host/path`, when a host header exists.
 fn absolute_url(uri: &Uri, headers: &HeaderMap) -> String {
+    // Only the path survives: see `url_of` for why the query is dropped.
+    let path = uri.path();
+    if let (Some(scheme), Some(authority)) = (uri.scheme(), uri.authority()) {
+        return format!("{scheme}://{authority}{path}");
+    }
     if uri.scheme().is_some() {
-        return uri.to_string();
+        return path.to_owned();
     }
 
     let host = headers
@@ -174,7 +184,7 @@ fn absolute_url(uri: &Uri, headers: &HeaderMap) -> String {
         .unwrap_or("http");
 
     match host {
-        Some(host) => format!("{scheme}://{host}{uri}"),
-        None => uri.to_string(),
+        Some(host) => format!("{scheme}://{host}{path}"),
+        None => path.to_owned(),
     }
 }

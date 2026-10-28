@@ -21,8 +21,8 @@ use uuid::Uuid;
 fn a_new_record_carries_only_what_it_was_given() {
     let mut record = AuditRecord::new("users", 42_i64, AuditAction::Update);
 
-    assert_eq!(record.table, "users");
-    assert_eq!(record.id, AuditId::from(42_i64));
+    assert_eq!(record.auditable_table, "users");
+    assert_eq!(record.auditable_id, AuditId::from(42_i64));
     assert_eq!(record.action, AuditAction::Update);
     assert_eq!(record.before_content, None);
     assert_eq!(record.after_content, None);

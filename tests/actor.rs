@@ -183,16 +183,6 @@ async fn the_request_metadata_is_read_from_the_task_local() {
     .await;
 }
 
-#[test]
-fn the_context_debug_shows_the_actor_and_hides_the_stash() {
-    let actor = Uuid::new_v4();
-    let context = seaorm_auto_audit::AuditContext::new(Some(actor.into()));
-
-    let rendered = format!("{context:?}");
-    assert!(rendered.contains(&actor.to_string()), "{rendered}");
-    assert!(!rendered.contains("stash"), "{rendered}");
-}
-
 #[tokio::test]
 async fn scope_suspended_returns_the_future_value() {
     let value = seaorm_auto_audit::scope_suspended(async { 42u32 }).await;

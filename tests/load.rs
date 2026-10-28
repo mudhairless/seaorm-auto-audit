@@ -513,7 +513,9 @@ fn the_checker_over_a_large_tree() {
 
     let mut checker = Checker::new();
     checker.allow(src.join("allowed"));
-    let violations = checker.scan(root);
+    let violations = checker
+        .scan(root)
+        .expect("the checker should scan the tree");
 
     assert_eq!(violations.len(), 5, "exactly the planted findings");
     assert!(

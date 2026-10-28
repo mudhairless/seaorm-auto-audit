@@ -5,7 +5,8 @@
 -- change and is NULL for changes nobody is behind (webhooks, background jobs).
 -- The request columns are NULL for the same non-HTTP writes.
 --
--- The table is append-only: nothing updates or deletes an audit row.
+-- The table is append-only: nothing updates an audit row, and the
+-- only delete is `prune`, which removes the rows its policy selects.
 
 CREATE TABLE IF NOT EXISTS audits (
     id              TEXT        PRIMARY KEY,

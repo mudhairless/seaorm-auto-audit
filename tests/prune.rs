@@ -173,9 +173,16 @@ async fn keep_latest_zero_removes_everything() {
 async fn a_policy_with_no_rule_is_refused() {
     let (_dir, db) = fresh_db().await;
 
-    let error = prune(&db, &PrunePolicy::default(), PruneMode::DryRun)
-        .await
-        .expect_err("a policy with no rule must be refused");
+    let error = prune(
+        &db,
+        &PrunePolicy {
+            keep_latest: None,
+            older_than: None,
+        },
+        PruneMode::DryRun,
+    )
+    .await
+    .expect_err("a policy with no rule must be refused");
 
     assert!(
         error.to_string().contains("keep_latest"),

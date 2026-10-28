@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::Path;
 
-use seaorm_auto_audit::scan::{Checker, FORBIDDEN_PATTERNS};
+use seaorm_auto_audit::scan::{Checker, FORBIDDEN_PATTERNS, ScanError};
 use tempfile::TempDir;
 
 fn scan(source: &str) -> Vec<String> {
@@ -163,17 +163,20 @@ fn the_default_checker_uses_the_builtin_patterns() {
 }
 
 #[test]
-fn it_scans_nothing_for_a_non_rust_file() {
+fn it_errors_for_a_non_rust_file_root() {
     let directory = TempDir::new().expect("a temporary directory");
     let file = directory.path().join("notes.txt");
     fs::write(&file, "users::Entity::insert(am);").expect("the file");
 
-    assert!(Checker::new().scan(&file).is_empty());
+    assert!(matches!(
+        Checker::new().scan(&file),
+        Err(ScanError::NothingScanned { .. })
+    ));
 }
 
 #[cfg(unix)]
 #[test]
-fn it_skips_a_file_it_cannot_read() {
+fn it_errors_on_a_file_it_cannot_read() {
     use std::os::unix::fs::PermissionsExt;
 
     let directory = TempDir::new().expect("a temporary directory");
@@ -181,7 +184,10 @@ fn it_skips_a_file_it_cannot_read() {
     fs::write(&file, "users::Entity::insert(am);").expect("the file");
     fs::set_permissions(&file, fs::Permissions::from_mode(0o000)).expect("the permissions");
 
-    assert!(Checker::new().scan(directory.path()).is_empty());
+    assert!(matches!(
+        Checker::new().scan(directory.path()),
+        Err(ScanError::Unreadable { .. })
+    ));
 }
 
 #[test]
@@ -223,7 +229,9 @@ fn it_scans_a_directory_recursively() {
     .expect("the source file");
     fs::write(directory.path().join("main.rs"), "fn main() {}").expect("the source file");
 
-    let violations = Checker::new().scan(directory.path());
+    let violations = Checker::new()
+        .scan(directory.path())
+        .expect("the scan should succeed");
 
     assert_eq!(violations.len(), 1);
     assert!(violations[0].path.ends_with("users.rs"));
@@ -232,6 +240,7 @@ fn it_scans_a_directory_recursively() {
 #[test]
 fn it_skips_target_and_hidden_directories() {
     let directory = TempDir::new().expect("a temporary directory");
+    fs::write(directory.path().join("main.rs"), "fn main() {}").expect("the source file");
     let target = directory.path().join("target");
     fs::create_dir_all(&target).expect("the target directory");
     fs::write(target.join("generated.rs"), "users::Entity::insert(am);").expect("the file");
@@ -240,7 +249,12 @@ fn it_skips_target_and_hidden_directories() {
     fs::create_dir_all(&hidden).expect("the hidden directory");
     fs::write(hidden.join("hook.rs"), "users::Entity::insert(am);").expect("the file");
 
-    assert!(Checker::new().scan(directory.path()).is_empty());
+    assert!(
+        Checker::new()
+            .scan(directory.path())
+            .expect("the scan should succeed")
+            .is_empty()
+    );
 }
 
 #[cfg(unix)]
@@ -253,7 +267,12 @@ fn it_does_not_follow_symlinks() {
     std::os::unix::fs::symlink(directory.path(), directory.path().join("again"))
         .expect("the symlink");
 
-    assert!(Checker::new().scan(directory.path()).is_empty());
+    assert!(
+        Checker::new()
+            .scan(directory.path())
+            .expect("the scan should succeed")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -266,7 +285,12 @@ fn it_exempts_a_directory() {
     let mut checker = Checker::new();
     checker.allow(allowed.clone());
 
-    assert!(checker.scan(directory.path()).is_empty());
+    assert!(
+        checker
+            .scan(directory.path())
+            .expect("the scan should succeed")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -278,7 +302,12 @@ fn it_exempts_a_file() {
     let mut checker = Checker::new();
     checker.allow(&file);
 
-    assert!(checker.scan(directory.path()).is_empty());
+    assert!(
+        checker
+            .scan(directory.path())
+            .expect("the scan should succeed")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -305,7 +334,9 @@ fn it_exempts_a_bare_file_name() {
     let mut checker = Checker::new();
     checker.allow("audit.rs");
 
-    let violations = checker.scan(directory.path());
+    let violations = checker
+        .scan(directory.path())
+        .expect("the scan should succeed");
 
     assert_eq!(violations.len(), 1, "only the file that is not exempt");
     assert!(violations[0].path.ends_with("users.rs"));
@@ -366,6 +397,20 @@ fn the_binary_needs_something_to_scan() {
     assert_eq!(output.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("usage:"), "{stderr}");
+}
+
+#[test]
+fn the_binary_fails_loudly_on_an_empty_directory() {
+    let directory = TempDir::new().expect("a temporary directory");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_seaorm-auto-audit-check"))
+        .arg(directory.path())
+        .output()
+        .expect("the checker should run");
+
+    assert_eq!(output.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("nothing was scanned"), "{stderr}");
 }
 
 #[test]
@@ -447,18 +492,31 @@ fn it_scans_a_single_rust_file() {
     let file = directory.path().join("users.rs");
     fs::write(&file, "users::Entity::insert(am).exec(db);").expect("the source file");
 
-    let violations = Checker::new().scan(&file);
+    let violations = Checker::new().scan(&file).expect("the scan should succeed");
 
     assert_eq!(violations.len(), 1);
     assert!(violations[0].path.ends_with("users.rs"));
 }
 
 #[test]
-fn it_scans_nothing_for_a_path_that_does_not_exist() {
+fn it_errors_for_a_path_that_does_not_exist() {
     let directory = TempDir::new().expect("a temporary directory");
     let missing = directory.path().join("no_such_dir");
 
-    assert!(Checker::new().scan(&missing).is_empty());
+    assert!(matches!(
+        Checker::new().scan(&missing),
+        Err(ScanError::Unreadable { .. })
+    ));
+}
+
+#[test]
+fn it_errors_for_an_empty_directory() {
+    let directory = TempDir::new().expect("a temporary directory");
+
+    assert!(matches!(
+        Checker::new().scan(directory.path()),
+        Err(ScanError::NothingScanned { .. })
+    ));
 }
 
 #[test]

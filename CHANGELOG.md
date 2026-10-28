@@ -16,6 +16,57 @@ listed under Changed.
   many SQL variables. The rows returned are still exactly the rows the
   delete removed, in the same oldest-first order.
 
+- Snapshots are keyed by database column name, and `redacted_columns()`
+  / `excluded_columns()` are matched against those names, as the docs
+  always said. Snapshots used to be built by serializing the model, so
+  the keys were serde names: on a model whose column name differs from
+  its field or serde name (a `column_name` override, a serde rename),
+  listing the column name silently redacted nothing and the value was
+  written into the audit table. Projects that listed a renamed column
+  by its field or serde name must switch the entry to the column name.
+
+### Changed
+
+- `Checker::scan` returns `Result<Vec<Violation>, ScanError>` instead of
+  a bare vector. A root that cannot be read, a file in the tree that
+  cannot be read, and a root that yields no Rust source files at all
+  are now errors rather than silent empty results: the checker's job is
+  gating a build, and a gate that passes having checked nothing is
+  worse than no gate. The `seaorm-auto-audit-check` binary exits 2 in
+  those cases. Callers that treated "missing or empty input" as "clean"
+  were relying on the bug.
+
+- The axum middleware no longer records the request's query string in
+  `audits.url`: only `scheme://host/path` is stored. Query strings
+  carry whatever a client put there, including access tokens and
+  password-reset links, and an audit trail should not collect them.
+  The `url` field keeps its name and its meaning otherwise.
+
+- `AuditRecord`'s fields are renamed to match the table they land in:
+  `table` is now `auditable_table` and `id` is now `auditable_id`
+  (the constructor's parameters follow).
+- `AuditContext` is no longer public. It was buildable but could not
+  be passed to any public function; `scope` and `scope_with_request`
+  remain the way in.
+- The middleware's fallback client-address extension is renamed from
+  `ClientIp` to `ClientIpExtension`; it shared a name with
+  `axum_client_ip::ClientIp`, which the same module imports.
+- `PrunePolicy` no longer implements `Default`: the default policy
+  (neither rule set) is always refused by `prune`, so the derive was
+  a trap. Build one with `keep_latest`, `older_than`, or a struct
+  literal.
+- `AuditAction` and `PruneMode` are now `#[non_exhaustive]`.
+- `audits::Model::modified` returns its changes sorted by column
+  name, independent of the stored JSON's key order.
+- `record_read` / `record_reads` refuse a `fetched` payload that is
+  not a JSON object, instead of storing it unstripped (the redaction
+  stripping works by key, and a non-object has no keys to strip).
+- The MySQL setup script declares `auditable_id` as TEXT, like the
+  other backends and the entity, instead of VARCHAR(255); the
+  (table, id) index keeps a 255-character prefix on the id.
+- The re-export of the `async_trait` macro is now `#[doc(hidden)]`;
+  it was never part of the documented surface.
+
 ## [0.9.0] - 2026-10-27
 
 ### Changed

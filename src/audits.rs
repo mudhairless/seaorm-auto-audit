@@ -1,7 +1,8 @@
 //! The `audits` table: where the audit rows land.
 //!
-//! The shape is deliberately small — one row per change, the before and after
-//! state of the audited row as JSON, and the user who made the change.
+//! The shape is deliberately small — one row per change, the state of the
+//! audited row around the change as JSON (for an update, only the columns
+//! that changed), and the user who made the change.
 //!
 //! | column            | meaning                                            |
 //! |-------------------|----------------------------------------------------|
@@ -9,9 +10,9 @@
 //! | `created_at`      | when the change happened                            |
 //! | `auditable_table` | the table of the audited row                        |
 //! | `auditable_id`    | the primary key of the audited row, as text         |
-//! | `action`          | `create`, `update` or `delete`                      |
+//! | `action`          | `create`, `update`, `delete` or `read`                |
 //! | `before_content`  | the row before the change (`null` for creates)       |
-//! | `after_content`   | the row after the change (`null` for deletes)       |
+//! | `after_content`   | the row after the change (`null` for deletes); a read stores the payload it exposed |
 //! | `updated_by_id`   | the user who made the change (`null` when nobody did) |
 //! | `ip_address`      | the client address, when the change came from a request |
 //! | `url`             | the request URL, when there was a request               |
@@ -82,7 +83,9 @@ impl Model {
     /// write. Rows written by 0.x versions hold full snapshots instead, so
     /// a column whose value is equal on both sides is filtered out as
     /// unchanged, except a redaction marker pair: a column redacted on both
-    /// sides did change, and the markers are all that was stored.
+    /// sides did change, and the markers are all that was stored. The
+    /// changes are returned sorted by column name, whatever order the
+    /// stored JSON happens to keep its keys in.
     ///
     /// # Errors
     ///
@@ -148,6 +151,7 @@ impl Model {
                 }
             }
         }
+        changes.sort_by(|left, right| left.column.cmp(&right.column));
         Ok(changes)
     }
 }

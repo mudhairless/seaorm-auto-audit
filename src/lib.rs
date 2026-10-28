@@ -43,15 +43,19 @@
 //! }
 //! ```
 //!
+//! The middleware in step 3 is the `middleware` module, which exists
+//! only with the crate's `axum` feature enabled.
+//!
 //! # Rules
 //!
 //! * Audited tables are written with ActiveModel methods (`insert`, `update`,
 //!   `save`, `delete`) **inside a transaction**. Repository-style writes
-//!   (`Entity::insert(am)`, `Entity::update(am)`, `update_without_returning`)
-//!   skip SeaORM's hooks entirely. For the bulk methods, use the audited
-//!   wrappers [`insert_many`], [`update_many`], [`delete_many`] and
-//!   [`delete_by_id`] instead of the raw calls. The `seaorm-auto-audit-check`
-//!   binary enforces all of this; see [`scan`].
+//!   (`Entity::insert(am)`, `Entity::update(am)`) skip SeaORM's hooks
+//!   entirely, and `update_without_returning` runs `before_save` but not
+//!   `after_save`, which leaves it just as unaudited. For the bulk
+//!   methods, use the audited wrappers [`insert_many`], [`update_many`],
+//!   [`delete_many`] and [`delete_by_id`] instead of the raw calls. The
+//!   `seaorm-auto-audit-check` binary enforces all of this; see [`scan`].
 //! * Every audited write runs inside an audit scope ([`scope`]). The scope
 //!   carries the actor and the before-state stash; without it the hooks and
 //!   wrappers fail loudly rather than writing a half-empty audit row.
@@ -97,14 +101,15 @@ mod stash;
 #[cfg(feature = "axum")]
 pub mod middleware;
 
+#[doc(hidden)]
 pub use async_trait;
 
 pub use auditable::Auditable;
 pub use audits::Entity as Audits;
 pub use bulk::{delete_by_id, delete_many, insert_many, update_many};
 pub use context::{
-    AuditContext, NO_SCOPE, RequestMetadata, current_request_metadata, current_user_id, scope,
-    scope_suspended, scope_with_request,
+    NO_SCOPE, RequestMetadata, current_request_metadata, current_user_id, scope, scope_suspended,
+    scope_with_request,
 };
 pub use hooks::{
     after_delete, after_save, before_delete, before_save, record_read, record_reads, write_record,

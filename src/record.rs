@@ -8,6 +8,7 @@ use crate::id::AuditId;
 
 /// What happened to an audited row.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum AuditAction {
     /// The row was created.
     Create,
@@ -31,7 +32,7 @@ impl AuditAction {
     }
 }
 
-/// An `audits.action` value that is not one of the three known actions.
+/// An `audits.action` value that is not one of the known actions.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UnknownAction(pub String);
 
@@ -86,9 +87,9 @@ pub struct ColumnChange {
 #[derive(Clone, Debug, PartialEq)]
 pub struct AuditRecord {
     /// The table of the audited row.
-    pub table: String,
+    pub auditable_table: String,
     /// The primary key of the audited row.
-    pub id: AuditId,
+    pub auditable_id: AuditId,
     /// What happened.
     pub action: AuditAction,
     /// The audited row before the change. `None` for creates.
@@ -124,10 +125,14 @@ impl AuditRecord {
     /// record.after_content = Some(after);
     /// record.updated_by_id = seaorm_auto_audit::current_user_id();
     /// ```
-    pub fn new(table: impl Into<String>, id: impl Into<AuditId>, action: AuditAction) -> Self {
+    pub fn new(
+        auditable_table: impl Into<String>,
+        auditable_id: impl Into<AuditId>,
+        action: AuditAction,
+    ) -> Self {
         Self {
-            table: table.into(),
-            id: id.into(),
+            auditable_table: auditable_table.into(),
+            auditable_id: auditable_id.into(),
             action,
             before_content: None,
             after_content: None,

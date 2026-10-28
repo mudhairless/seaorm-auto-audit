@@ -31,7 +31,7 @@ use crate::audits;
 /// for its (table, id) pair, or both. At least one rule must be set; a
 /// policy with neither is refused rather than treated as licence to prune
 /// by no rule at all.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PrunePolicy {
     /// Keep only this many of the most recent audits per (table, id).
     /// `Some(0)` keeps none of them.
@@ -60,6 +60,7 @@ impl PrunePolicy {
 
 /// Whether a [`prune`] run only reports, or reports and deletes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum PruneMode {
     /// Return the rows the policy selects; delete nothing.
     DryRun,

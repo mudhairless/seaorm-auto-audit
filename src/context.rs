@@ -46,7 +46,7 @@ pub struct RequestMetadata {
 /// inside it: a request with a session carries `Some(user_id)`, a webhook or a
 /// job acting for nobody carries `None`, and only an HTTP request carries
 /// [`RequestMetadata`].
-pub struct AuditContext {
+pub(crate) struct AuditContext {
     user_id: Option<AuditId>,
     request: Option<RequestMetadata>,
     stash: Mutex<Stash>,
@@ -131,6 +131,10 @@ where
 /// Suspension is independent of the actor scope: it works with no scope at
 /// all, and inside a normal scope it lasts until the suspended future
 /// completes, after which normal auditing resumes in that scope.
+///
+/// Like the actor scope, suspension is task-local: it does not cross a
+/// `tokio::spawn`. Code spawned inside a suspended scope is audited as
+/// usual (and fails outside an actor scope), not silently suspended.
 pub async fn scope_suspended<F>(fut: F) -> F::Output
 where
     F: Future,
@@ -184,4 +188,19 @@ pub(crate) fn with_context<R>(f: impl FnOnce(&AuditContext) -> R) -> Result<R, D
     ACTOR
         .try_with(f)
         .map_err(|_| DbErr::Custom(NO_SCOPE.to_owned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_context_debug_shows_the_actor_and_hides_the_stash() {
+        let actor = uuid::Uuid::new_v4();
+        let context = AuditContext::new(Some(actor.into()));
+
+        let rendered = format!("{context:?}");
+        assert!(rendered.contains(&actor.to_string()), "{rendered}");
+        assert!(!rendered.contains("stash"), "{rendered}");
+    }
 }

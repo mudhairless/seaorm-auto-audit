@@ -34,10 +34,14 @@ In scope:
 - Anything that puts data in an audit row that should not be there.
   The redaction and exclusion rules are a security feature of this
   crate: if a column named by `redacted_columns()` or
-  `excluded_columns()` reaches the `audits` table through any write
-  path, that is a vulnerability, not just a bug.
-- Audit rows written for the wrong actor, or written when no audit
-  scope was open.
+  `excluded_columns()` reaches the `audits` table through any of the
+  crate's audited write paths (the lifecycle hooks, the bulk wrappers,
+  the read helpers), that is a vulnerability, not just a bug. The
+  untyped `write_record` / `write_records` helpers are the documented
+  exception: they store records exactly as given, so what goes through
+  them is the caller's responsibility.
+- Audit rows written for the wrong actor, or written by the hooks or
+  the bulk wrappers when no audit scope was open.
 
 Out of scope:
 

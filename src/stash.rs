@@ -17,9 +17,9 @@
 use std::collections::HashMap;
 
 use sea_orm::{
-    ActiveModelTrait, DbErr, EntityTrait, Iterable, ModelTrait, PrimaryKeyToColumn, Value,
+    ActiveModelTrait, DbErr, EntityTrait, IdenStatic, Iterable, ModelTrait, PrimaryKeyToColumn,
+    Value,
 };
-use serde::Serialize;
 use serde_json::Value as Json;
 
 use crate::auditable::Auditable;
@@ -95,7 +95,6 @@ impl Stashed {
     pub(crate) fn present<E>(model: &E::Model) -> Result<Self, DbErr>
     where
         E: Auditable,
-        E::Model: Serialize,
     {
         Ok(Self::Present {
             id: E::audit_id(model)?,
@@ -104,18 +103,78 @@ impl Stashed {
     }
 }
 
-/// Serialize a row into the JSON stored in an audit row.
+/// Build the JSON stored in an audit row from a row.
+///
+/// The object is keyed by database column name: it is built column by
+/// column from the entity's columns, not by serializing the model, so
+/// the keys are the names `redacted_columns` and `excluded_columns` are
+/// matched against, whatever the Rust field names or serde attributes
+/// say. (Keying by serde name made a renamed column silently miss its
+/// redaction rule and land in the audit table.)
 pub(crate) fn to_json<E>(model: &E::Model) -> Result<Json, DbErr>
 where
     E: Auditable,
-    E::Model: Serialize,
 {
-    serde_json::to_value(model).map_err(|error| {
-        DbErr::Custom(format!(
-            "seaorm-auto-audit: could not serialize a row of `{}`: {error}",
-            E::default().table_name()
-        ))
-    })
+    let mut snapshot = serde_json::Map::new();
+    for column in E::Column::iter() {
+        snapshot.insert(column.as_str().to_owned(), value_to_json(model.get(column)));
+    }
+
+    Ok(Json::Object(snapshot))
+}
+
+/// Convert one column value into its JSON form.
+///
+/// The common kinds convert faithfully: numbers stay numbers, text
+/// stays text, bytes become an array of numbers (as serde serialized
+/// them), dates and timestamps become ISO strings. `sea_orm::Value`
+/// has no serde implementation and no JSON conversion of its own, so
+/// the kinds without a faithful JSON form (decimals, database enums,
+/// `time` and `jiff` values, big decimals) are stored as their debug
+/// text rather than failing the write they belong to. A non-finite
+/// float (NaN, infinity) has no JSON number and is stored as null;
+/// serializing the model used to fail the write on one instead.
+fn value_to_json(value: Value) -> Json {
+    match value {
+        Value::Bool(value) => value.map_or(Json::Null, Json::Bool),
+        Value::TinyInt(value) => value.map_or(Json::Null, |v| Json::from(i64::from(v))),
+        Value::SmallInt(value) => value.map_or(Json::Null, |v| Json::from(i64::from(v))),
+        Value::Int(value) => value.map_or(Json::Null, |v| Json::from(i64::from(v))),
+        Value::BigInt(value) => value.map_or(Json::Null, Json::from),
+        Value::TinyUnsigned(value) => value.map_or(Json::Null, |v| Json::from(u64::from(v))),
+        Value::SmallUnsigned(value) => value.map_or(Json::Null, |v| Json::from(u64::from(v))),
+        Value::Unsigned(value) => value.map_or(Json::Null, |v| Json::from(u64::from(v))),
+        Value::BigUnsigned(value) => value.map_or(Json::Null, Json::from),
+        Value::Float(value) => value.map_or(Json::Null, |v| json_number(f64::from(v))),
+        Value::Double(value) => value.map_or(Json::Null, json_number),
+        Value::String(value) => value.map_or(Json::Null, Json::String),
+        Value::Char(value) => value.map_or(Json::Null, |v| Json::String(v.to_string())),
+        Value::Bytes(value) => value.map_or(Json::Null, |bytes| {
+            Json::Array(bytes.iter().map(|byte| Json::from(*byte)).collect())
+        }),
+        Value::Json(value) => value.map_or(Json::Null, |v| *v),
+        Value::ChronoDate(value) => value.map_or(Json::Null, |v| Json::String(v.to_string())),
+        Value::ChronoTime(value) => value.map_or(Json::Null, |v| Json::String(v.to_string())),
+        Value::ChronoDateTime(value) => value.map_or(Json::Null, |v| {
+            Json::String(v.format("%Y-%m-%dT%H:%M:%S%.f").to_string())
+        }),
+        Value::ChronoDateTimeUtc(value) => value.map_or(Json::Null, |v| {
+            Json::String(v.format("%Y-%m-%dT%H:%M:%S%.f%:z").to_string())
+        }),
+        Value::ChronoDateTimeLocal(value) => value.map_or(Json::Null, |v| {
+            Json::String(v.format("%Y-%m-%dT%H:%M:%S%.f%:z").to_string())
+        }),
+        Value::ChronoDateTimeWithTimeZone(value) => value.map_or(Json::Null, |v| {
+            Json::String(v.format("%Y-%m-%dT%H:%M:%S%.f%:z").to_string())
+        }),
+        Value::Uuid(value) => value.map_or(Json::Null, |v| Json::String(v.to_string())),
+        other => Json::String(format!("{other:?}")),
+    }
+}
+
+/// A JSON number for a float, or null when the value is not finite.
+fn json_number(value: f64) -> Json {
+    serde_json::Number::from_f64(value).map_or(Json::Null, Json::Number)
 }
 
 /// The parked before-states of the rows touched by the current scope.

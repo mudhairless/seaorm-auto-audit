@@ -36,7 +36,6 @@ use sea_orm::{
     DeleteResult, EntityTrait, IntoActiveModel, Iterable, ModelTrait, PrimaryKeyToColumn,
     PrimaryKeyTrait, QueryFilter, UpdateResult, Value,
 };
-use serde::Serialize;
 
 use crate::auditable::Auditable;
 use crate::context::{is_suspended, with_context};
@@ -56,7 +55,7 @@ use crate::stash::to_json;
 pub async fn insert_many<E, C, I>(db: &C, models: I) -> Result<Vec<E::Model>, DbErr>
 where
     E: Auditable,
-    E::Model: Serialize + IntoActiveModel<E::ActiveModel>,
+    E::Model: IntoActiveModel<E::ActiveModel>,
     C: ConnectionTrait,
     I: IntoIterator<Item = E::ActiveModel>,
 {
@@ -139,7 +138,6 @@ pub async fn update_many<E, C>(
 ) -> Result<UpdateResult, DbErr>
 where
     E: Auditable,
-    E::Model: Serialize,
     C: ConnectionTrait,
 {
     if !is_suspended() {
@@ -229,7 +227,6 @@ where
 pub async fn delete_many<E, C>(db: &C, filter: Condition) -> Result<DeleteResult, DbErr>
 where
     E: Auditable,
-    E::Model: Serialize,
     C: ConnectionTrait,
 {
     if !is_suspended() {
@@ -272,7 +269,6 @@ where
 pub async fn delete_by_id<E, C, T>(db: &C, id: T) -> Result<DeleteResult, DbErr>
 where
     E: Auditable,
-    E::Model: Serialize,
     C: ConnectionTrait,
     T: Into<<E::PrimaryKey as PrimaryKeyTrait>::ValueType>,
 {

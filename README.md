@@ -77,13 +77,14 @@ with any SeaORM-supported database:
 | `created_at`      | when the change happened                             |
 | `auditable_table` | the table of the audited row                         |
 | `auditable_id`    | the primary key of the audited row, as text          |
-| `action`          | `create`, `update` or `delete`                       |
+| `action`          | `create`, `update`, `delete` or `read`                       |
 | `before_content`  | before the change (`null` for creates); the full row, except for updates, where only the changed columns |
-| `after_content`   | after the change (`null` for deletes); the full row, except for updates, where only the changed columns  |
+| `after_content`   | after the change (`null` for deletes); the full row, except for updates, where only the changed columns; a read stores the payload it exposed |
 | `updated_by_id`   | the user who made the change (`null` when nobody did) |
 | `ip_address`      | the client address, when there was a request         |
 | `url`             | the request URL, when there was a request            |
 | `user_agent`      | the request's `User-Agent`, when it had one          |
+| `comment`         | why a read happened (`null` for writes)                  |
 
 The request columns and `updated_by_id` are nullable: non-HTTP writes
 (background jobs, webhooks) have neither a session nor a request behind them,
@@ -133,8 +134,9 @@ must be nullable — the crate simply leaves them out of the insert.
 
 ### 2. The entity opts in
 
-An auditable model needs a single-column primary key and must derive
-`Serialize`. The key may be a `uuid`, an integer or a string:
+An auditable model needs a single-column primary key by default
+(composite keys override `Auditable::audit_id`). The key may be a
+`uuid`, an integer or a string:
 
 ```rust
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
@@ -287,6 +289,12 @@ password-only update produce two identical snapshots. The audit row exists but
 looks like a no-op, and nothing says the password was the thing that moved.
 With the rules above, **a redacted column present in an audit row means it
 changed, and no audit row ever holds a hash**.
+
+The names in `redacted_columns()` and `excluded_columns()` are database
+column names (the column's `column_name`), not Rust field names and not
+serde names. Snapshots are keyed by column name, and the lists are
+matched against those keys, so a column renamed at any layer is listed
+by the name the database knows it by.
 
 The same principle applies to every column, not just redacted ones: an
 update's snapshots hold only the columns that changed, so the pair is the
@@ -462,7 +470,7 @@ instead.
   re-scope with `seaorm_auto_audit::scope(..)`. A spawned write without a scope fails
   loudly rather than writing a half-empty audit row.
 - **An audited write outside a scope fails** with
-  `DbErr::Custom(seaorm_auto_audit::NO_SCOPE)`. A missing *user* inside a scope is fine:
+  `DbErr::Custom(seaorm_auto_audit::NO_SCOPE.to_owned())`. A missing *user* inside a scope is fine:
   the audit row is written with `updated_by_id` NULL.
 - **A failed update leaves a stale stash entry.** Harmless: the next write of
   the same row overwrites it, and the stash is keyed by table and primary key so

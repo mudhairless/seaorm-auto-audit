@@ -24,6 +24,10 @@
 //! |                                    | `Entity::delete_by_id`             |
 //! |                                    | `update_without_returning`         |
 //!
+//! `update_without_returning` is the odd one in the right-hand column: it
+//! runs `before_save` but not `after_save`, so the write still lands
+//! with no audit row.
+//!
 //! Comments and string literals are blanked before matching, so documenting the
 //! forbidden styles — as the table above does — does not trip the check.
 
@@ -65,6 +69,45 @@ impl std::fmt::Display for Violation {
         )
     }
 }
+
+/// Why a scan could not produce a trustworthy answer.
+///
+/// A checker that cannot read its input must not report "clean": a scan
+/// that silently skipped files, or found nothing to scan at all, would
+/// pass a build gate while checking nothing. Both failures are errors,
+/// never empty results.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ScanError {
+    /// A path in the tree could not be read.
+    Unreadable {
+        /// The file or directory that could not be read.
+        path: PathBuf,
+        /// The operating system's description of the failure.
+        message: String,
+    },
+    /// The root held no Rust source files, so nothing was scanned.
+    NothingScanned {
+        /// The root that yielded no source files.
+        path: PathBuf,
+    },
+}
+
+impl std::fmt::Display for ScanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScanError::Unreadable { path, message } => {
+                write!(f, "could not read `{}`: {message}", path.display())
+            }
+            ScanError::NothingScanned { path } => write!(
+                f,
+                "`{}` contains no Rust source files; nothing was scanned",
+                path.display()
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ScanError {}
 
 /// Finds write styles that skip the audit hooks.
 #[derive(Clone, Debug)]
@@ -118,18 +161,34 @@ impl Checker {
     ///
     /// `root` may be a file or a directory. Directories are walked
     /// recursively; `target`, `.git` and other hidden directories are skipped.
-    pub fn scan(&self, root: &Path) -> Vec<Violation> {
+    ///
+    /// # Errors
+    ///
+    /// [`ScanError::Unreadable`] when any part of the tree cannot be
+    /// read, and [`ScanError::NothingScanned`] when the root holds no
+    /// Rust source files at all. A scan that checked nothing is an
+    /// error, never an empty result: this checker's job is gating, and
+    /// a gate that passes on no evidence is worse than no gate.
+    pub fn scan(&self, root: &Path) -> Result<Vec<Violation>, ScanError> {
+        let files = source_files(root)?;
+        if files.is_empty() {
+            return Err(ScanError::NothingScanned {
+                path: root.to_path_buf(),
+            });
+        }
         let mut violations = Vec::new();
-        for path in source_files(root) {
+        for path in files {
             if self.is_allowed(&path) {
                 continue;
             }
-            let Ok(contents) = std::fs::read_to_string(&path) else {
-                continue;
-            };
+            let contents =
+                std::fs::read_to_string(&path).map_err(|error| ScanError::Unreadable {
+                    path: path.clone(),
+                    message: error.to_string(),
+                })?;
             violations.extend(self.scan_source(&path, &contents));
         }
-        violations
+        Ok(violations)
     }
 
     /// Scan one source file for forbidden call sites.
@@ -170,20 +229,31 @@ impl Checker {
 }
 
 /// The Rust source files under `root`.
-fn source_files(root: &Path) -> Vec<PathBuf> {
+///
+/// A directory that cannot be listed, or an entry that cannot be read,
+/// is an error, not an empty result: silently dropping part of the
+/// tree is how a forbidden write hides from the gate.
+fn source_files(root: &Path) -> Result<Vec<PathBuf>, ScanError> {
     if root.is_file() {
-        return if root.extension().is_some_and(|extension| extension == "rs") {
-            vec![root.to_path_buf()]
-        } else {
-            Vec::new()
-        };
+        return Ok(
+            if root.extension().is_some_and(|extension| extension == "rs") {
+                vec![root.to_path_buf()]
+            } else {
+                Vec::new()
+            },
+        );
     }
 
     let mut files = Vec::new();
-    let Ok(entries) = std::fs::read_dir(root) else {
-        return files;
-    };
-    for entry in entries.flatten() {
+    let entries = std::fs::read_dir(root).map_err(|error| ScanError::Unreadable {
+        path: root.to_path_buf(),
+        message: error.to_string(),
+    })?;
+    for entry in entries {
+        let entry = entry.map_err(|error| ScanError::Unreadable {
+            path: root.to_path_buf(),
+            message: error.to_string(),
+        })?;
         // The entry's own type, which does not follow symlinks. A symlinked
         // directory is skipped rather than walked: a link pointing back at
         // an ancestor would otherwise recurse until the stack overflows,
@@ -201,13 +271,13 @@ fn source_files(root: &Path) -> Vec<PathBuf> {
             if name.starts_with('.') || name == "target" || name == "node_modules" {
                 continue;
             }
-            files.extend(source_files(&path));
+            files.extend(source_files(&path)?);
         } else if path.extension().is_some_and(|extension| extension == "rs") {
             files.push(path);
         }
     }
     files.sort();
-    files
+    Ok(files)
 }
 
 /// Blank out comments and string literals, keeping the line structure.

@@ -10,7 +10,8 @@
 //! repeated.
 //!
 //! Exit code 0 means clean, 1 means at least one forbidden call site was
-//! found, 2 means the arguments made no sense.
+//! found, 2 means the arguments made no sense or a root could not be
+//! scanned (unreadable, or nothing in it to scan).
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -63,8 +64,18 @@ fn main() -> ExitCode {
     }
 
     let mut violations = Vec::new();
+    let mut unscannable = false;
     for root in &roots {
-        violations.extend(checker.scan(root));
+        match checker.scan(root) {
+            Ok(found) => violations.extend(found),
+            Err(error) => {
+                eprintln!("error: {error}");
+                unscannable = true;
+            }
+        }
+    }
+    if unscannable {
+        return ExitCode::from(2);
     }
 
     if violations.is_empty() {
