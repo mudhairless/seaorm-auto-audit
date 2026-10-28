@@ -8,6 +8,14 @@ listed under Changed.
 
 ## [Unreleased]
 
+### Fixed
+
+- `prune` in `Delete` mode now slices its in-transaction re-read and its
+  delete by id, reusing the crate's 256-row statement chunk, so a prune
+  selecting more than about 32k rows no longer fails on SQLite with too
+  many SQL variables. The rows returned are still exactly the rows the
+  delete removed, in the same oldest-first order.
+
 ## [0.9.0] - 2026-10-27
 
 ### Changed

@@ -182,3 +182,45 @@ async fn a_policy_with_no_rule_is_refused() {
         "the error names the missing rule: {error}"
     );
 }
+
+#[tokio::test]
+async fn delete_at_scale_removes_more_rows_than_one_statement_allows() {
+    let (_dir, db) = fresh_db().await;
+
+    // 40,000 rows: past SQLite's 32,766-variable limit for one `is_in`
+    // list, so an un-sliced prune delete would fail here. Seeded in
+    // 256-row batches, the same chunk size the crate slices by, so the
+    // seeding itself never hits the limit either.
+    let created_at = DateTimeWithTimeZone::parse_from_rfc3339("2020-01-01T00:00:00+00:00")
+        .expect("a fixed timestamp");
+    for start in (0..40_000).step_by(256) {
+        let end = (start + 256).min(40_000);
+        let models: Vec<audits::ActiveModel> = (start..end)
+            .map(|_| audits::ActiveModel {
+                id: Set(Uuid::now_v7()),
+                created_at: Set(created_at),
+                auditable_table: Set("users".to_owned()),
+                auditable_id: Set("scale".to_owned()),
+                action: Set("create".to_owned()),
+                before_content: Set(None),
+                after_content: Set(None),
+                updated_by_id: Set(None),
+                ip_address: Set(None),
+                url: Set(None),
+                user_agent: Set(None),
+                comment: Set(None),
+            })
+            .collect();
+        audits::Entity::insert_many(models)
+            .exec(&db)
+            .await
+            .expect("a seed batch");
+    }
+
+    let removed = prune(&db, &PrunePolicy::keep_latest(0), PruneMode::Delete)
+        .await
+        .expect("a prune past the variable limit");
+
+    assert_eq!(removed.len(), 40_000);
+    assert_eq!(audit_count(&db).await, 0);
+}

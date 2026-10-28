@@ -155,17 +155,31 @@ where
             // Re-read the selected rows inside the transaction, so the rows
             // returned are exactly the rows the delete removes, even if
             // another prune ran in between.
-            let removed = audits::Entity::find()
-                .filter(audits::Column::Id.is_in(ids))
-                .order_by_asc(audits::Column::CreatedAt)
-                .order_by_asc(audits::Column::Id)
-                .all(&txn)
-                .await?;
+            //
+            // Both the re-read and the delete below are sliced by
+            // STATEMENT_CHUNK ids. One un-sliced `is_in` list puts one
+            // variable per id in a single statement, and SQLite allows at
+            // most 32,766 variables, so a prune selecting more than about
+            // 32k rows failed the way bulk writes used to. The ids arrive
+            // in oldest-first order and each slice keeps that order, so
+            // concatenating the slices keeps the returned rows ordered.
+            let mut removed = Vec::new();
+            for ids in ids.chunks(crate::STATEMENT_CHUNK) {
+                let mut chunk = audits::Entity::find()
+                    .filter(audits::Column::Id.is_in(ids.to_vec()))
+                    .order_by_asc(audits::Column::CreatedAt)
+                    .order_by_asc(audits::Column::Id)
+                    .all(&txn)
+                    .await?;
+                removed.append(&mut chunk);
+            }
             let removed_ids: Vec<Uuid> = removed.iter().map(|row| row.id).collect();
-            audits::Entity::delete_many()
-                .filter(audits::Column::Id.is_in(removed_ids))
-                .exec(&txn)
-                .await?;
+            for ids in removed_ids.chunks(crate::STATEMENT_CHUNK) {
+                audits::Entity::delete_many()
+                    .filter(audits::Column::Id.is_in(ids.to_vec()))
+                    .exec(&txn)
+                    .await?;
+            }
             txn.commit().await?;
             Ok(removed)
         }
