@@ -2,17 +2,20 @@
 # Cluster soak test for seaorm-auto-audit. Local Docker only; this
 # never runs in CI, same deal as ../load_test.sh.
 #
-# Step 1 (this version): bring up the database and the api replicas
-# and wait until every replica answers. The writer and verifier
-# steps join this script as their binaries land.
+# Steps: `up` brings up the database and the api replicas; `run`
+# also starts the three writers (profile tools) and streams their
+# logs until they exit; `verify` reconciles the writer logs against
+# the audit trail and exits with the verifier's code.
 #
 # Usage:
 #   ./soak.sh up        # build and start the stack
+#   ./soak.sh run       # up, then run the writers to completion
+#   ./soak.sh verify    # check the trail against the writer logs
 #   ./soak.sh down      # stop it and drop the database volume data
 #   BACKEND=mysql ./soak.sh up
 #
 # Knobs: BACKEND (postgres default, or mysql), SOAK_PW (the throwaway
-# database password).
+# database password), OPS (operations per writer, default 200).
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -38,11 +41,19 @@ case "${1:-up}" in
             echo "api on :$port is up"
         done
         ;;
+    run)
+        "$0" up
+        "${COMPOSE[@]}" --profile tools up --build --no-deps writer0 writer1 writer2
+        ;;
+    verify)
+        "${COMPOSE[@]}" --profile tools build verify
+        "${COMPOSE[@]}" --profile tools run --rm verify
+        ;;
     down)
         "${COMPOSE[@]}" down -v
         ;;
     *)
-        echo "usage: ./soak.sh [up|down]" >&2
+        echo "usage: ./soak.sh [up|run|verify|down]" >&2
         exit 2
         ;;
 esac

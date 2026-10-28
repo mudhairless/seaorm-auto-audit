@@ -17,7 +17,7 @@ Local Docker only. It never runs in CI, same deal as the load tests.
   back, and an import endpoint that writes inside
   `scope_suspended`. The crate's middleware scopes every request;
   the actor comes from an `x-actor-id` header. Run 2 to 3 replicas.
-- `writer` (src/bin/writer.rs, next step): seeded randomized
+- `writer` (src/bin/writer.rs): seeded randomized
   operations against random replicas. One actor identity per
   writer, deliberate rollbacks, suspended imports, same-row
   contention over a small pool of hot rows, and unique sentinel
@@ -26,7 +26,7 @@ Local Docker only. It never runs in CI, same deal as the load tests.
   (the `OpEntry` shape in src/lib.rs) on a shared volume. The seed
   prints at startup and is settable, so a violating run replays
   exactly.
-- `verify` (src/bin/verify.rs, last step): reconciles the writer
+- `verify` (src/bin/verify.rs): reconciles the writer
   logs against the audits table and the final state of `notes`.
 
 Writers make values unique per operation (a title carries the
@@ -50,10 +50,11 @@ transaction before answering.
 
 ```console
 $ ./soak.sh up        # Postgres by default; BACKEND=mysql for MySQL
+$ ./soak.sh run       # up, plus the three writers (OPS= per writer)
+$ ./soak.sh verify    # exit 0 clean, 1 violations, 2 could not run
 $ ./soak.sh down
 ```
 
-The full run (writers plus verification) lands with the writer and
-verifier binaries. The gate for the 1.0 checklist is an agreed run,
-an hour or 100k operations, with zero invariant violations, on
-Postgres and on MySQL.
+The gate for
+the 1.0 checklist is an agreed run, an hour or 100k operations,
+with zero invariant violations, on Postgres and on MySQL.

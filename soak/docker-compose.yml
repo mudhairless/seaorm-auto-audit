@@ -52,3 +52,78 @@ services:
         condition: service_healthy
     ports:
       - "18083:8080"
+
+  # The writers live behind the tools profile: `docker compose
+  # --profile tools up writer0 writer1 writer2`, or ./soak.sh run.
+  # They are pure HTTP clients; LOG_DIR is a shared volume so the
+  # verifier (and hot-rows.json) can see every writer's log.
+  writer0:
+    build:
+      context: ..
+      dockerfile: soak/Dockerfile
+    command: ["writer"]
+    profiles: ["tools"]
+    environment:
+      WRITER_NAME: writer-0
+      SEED: "1000"
+      OPS: "${OPS:-200}"
+      API_URLS: "http://api1:8080,http://api2:8080,http://api3:8080"
+      LOG_DIR: /logs
+    volumes:
+      - ./logs:/logs
+    depends_on:
+      - api1
+      - api2
+      - api3
+
+  writer1:
+    build:
+      context: ..
+      dockerfile: soak/Dockerfile
+    command: ["writer"]
+    profiles: ["tools"]
+    environment:
+      WRITER_NAME: writer-1
+      SEED: "2000"
+      OPS: "${OPS:-200}"
+      API_URLS: "http://api1:8080,http://api2:8080,http://api3:8080"
+      LOG_DIR: /logs
+    volumes:
+      - ./logs:/logs
+    depends_on:
+      - api1
+      - api2
+      - api3
+
+  writer2:
+    build:
+      context: ..
+      dockerfile: soak/Dockerfile
+    command: ["writer"]
+    profiles: ["tools"]
+    environment:
+      WRITER_NAME: writer-2
+      SEED: "3000"
+      OPS: "${OPS:-200}"
+      API_URLS: "http://api1:8080,http://api2:8080,http://api3:8080"
+      LOG_DIR: /logs
+    volumes:
+      - ./logs:/logs
+    depends_on:
+      - api1
+      - api2
+      - api3
+
+  verify:
+    build:
+      context: ..
+      dockerfile: soak/Dockerfile
+    command: ["verify"]
+    profiles: ["tools"]
+    environment:
+      DATABASE_URL: "postgres://postgres:${SOAK_PW:-soaktest}@db:5432/soak"
+      LOG_DIR: /logs
+    volumes:
+      - ./logs:/logs
+    depends_on:
+      - db

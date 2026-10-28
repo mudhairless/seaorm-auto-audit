@@ -27,3 +27,8 @@ services:
   api3:
     environment:
       DATABASE_URL: "mysql://root:${SOAK_PW:-soaktest}@db:3306/soak"
+
+  verify:
+    environment:
+      DATABASE_URL: "mysql://root:${SOAK_PW:-soaktest}@db:3306/soak"
+

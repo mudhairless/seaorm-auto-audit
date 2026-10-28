@@ -1,5 +1,4 @@
-# Builds the soak binaries (api today; writer and verify join it as
-# they land). Build context is the repository root, so the crate
+# Builds the soak binaries (api, writer, verify). Build context is the repository root, so the crate
 # itself is part of the build, exactly as a consumer would get it.
 FROM rust:1-bookworm AS build
 WORKDIR /src
