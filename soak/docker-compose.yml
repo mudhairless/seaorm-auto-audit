@@ -1,0 +1,54 @@
+# The soak stack, Postgres by default. The MySQL variant layers
+# docker-compose.mysql.yml on top of this file (see soak.sh).
+# The database password is a throwaway for a local test database,
+# settable through SOAK_PW and defaulted so the stack just runs.
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: "${SOAK_PW:-soaktest}"
+      POSTGRES_DB: soak
+    ports:
+      - "55433:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "soak"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  api1:
+    build:
+      context: ..
+      dockerfile: soak/Dockerfile
+    environment:
+      DATABASE_URL: "postgres://postgres:${SOAK_PW:-soaktest}@db:5432/soak"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "18081:8080"
+
+  api2:
+    build:
+      context: ..
+      dockerfile: soak/Dockerfile
+    environment:
+      DATABASE_URL: "postgres://postgres:${SOAK_PW:-soaktest}@db:5432/soak"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "18082:8080"
+
+  api3:
+    build:
+      context: ..
+      dockerfile: soak/Dockerfile
+    environment:
+      DATABASE_URL: "postgres://postgres:${SOAK_PW:-soaktest}@db:5432/soak"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "18083:8080"

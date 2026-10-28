@@ -1,0 +1,29 @@
+# MySQL variant: layer over docker-compose.yml.
+#   docker compose -f docker-compose.yml -f docker-compose.mysql.yml up -d
+# soak.sh does this when BACKEND=mysql.
+
+services:
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: "${SOAK_PW:-soaktest}"
+      MYSQL_DATABASE: soak
+    ports:
+      - "53307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 2s
+      timeout: 2s
+      retries: 45
+
+  api1:
+    environment:
+      DATABASE_URL: "mysql://root:${SOAK_PW:-soaktest}@db:3306/soak"
+
+  api2:
+    environment:
+      DATABASE_URL: "mysql://root:${SOAK_PW:-soaktest}@db:3306/soak"
+
+  api3:
+    environment:
+      DATABASE_URL: "mysql://root:${SOAK_PW:-soaktest}@db:3306/soak"
