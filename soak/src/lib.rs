@@ -44,10 +44,16 @@ pub mod notes {
     }
 }
 
-/// The key column's type is the one thing the two drivers insist on
-/// differently (Postgres wants a native uuid, MySQL a BINARY(16)),
-/// the same split the crate's own real-database suites use. The
-/// rest is text on both.
+/// Two column types split by backend. The key: Postgres wants a
+/// native uuid, MySQL a BINARY(16), the same split the crate's own
+/// real-database suites use. And list_name: VARCHAR(191) on MySQL,
+/// text on Postgres, because the bulk wrappers filter on it and it
+/// is indexed on both backends, and a MySQL index over a TEXT
+/// column needs a prefix length. The index itself matters as much
+/// as its type: an unindexed filter column makes concurrent bulk
+/// operations take gap locks on MySQL until they deadlock (error
+/// 1213, seen in the first MySQL shakedown). A consumer's filtered
+/// column would be indexed; the soak schema matches.
 const NOTES_DDL_POSTGRES: &str = r#"
 CREATE TABLE IF NOT EXISTS notes (
     id uuid PRIMARY KEY,
@@ -57,16 +63,18 @@ CREATE TABLE IF NOT EXISTS notes (
     secret_token text,
     internal_note text
 );
+CREATE INDEX IF NOT EXISTS notes_list_name_idx ON notes (list_name);
 "#;
 
 const NOTES_DDL_MYSQL: &str = r#"
 CREATE TABLE IF NOT EXISTS notes (
     id BINARY(16) PRIMARY KEY,
-    list_name TEXT NOT NULL,
+    list_name VARCHAR(191) NOT NULL,
     title TEXT NOT NULL,
     body TEXT,
     secret_token TEXT,
-    internal_note TEXT
+    internal_note TEXT,
+    INDEX notes_list_name_idx (list_name)
 );
 "#;
 
