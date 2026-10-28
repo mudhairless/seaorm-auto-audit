@@ -16,13 +16,13 @@ use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectOptions, ConnectionTrait,
-    Database, DatabaseConnection, DbErr, EntityTrait, TransactionTrait,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, ConnectOptions, Database,
+    DatabaseConnection, DbErr, EntityTrait, TransactionTrait,
 };
 use seaorm_auto_audit::middleware::{scope_request, ClientIpSource};
 use seaorm_auto_audit::{record_read, scope_suspended, AuditId};
 use seaorm_auto_audit_soak::notes::{self, ActiveModel, Entity};
-use seaorm_auto_audit_soak::{audits_ddl, notes_ddl, NoteInput};
+use seaorm_auto_audit_soak::{apply_ddl, audits_ddl, notes_ddl, NoteInput};
 use serde::Deserialize;
 use serde_json::{json, Value as JsonValue};
 use uuid::Uuid;
@@ -297,8 +297,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut options = ConnectOptions::new(url.clone());
     options.max_connections(10);
     let db = Database::connect(options).await?;
-    db.execute_unprepared(notes_ddl(&url)).await?;
-    db.execute_unprepared(audits_ddl(&url)).await?;
+    apply_ddl(&db, notes_ddl(&url)).await?;
+    apply_ddl(&db, audits_ddl(&url)).await?;
 
     let app = Router::new()
         .route("/healthz", get(healthz))

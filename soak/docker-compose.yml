@@ -11,11 +11,9 @@ services:
       POSTGRES_DB: soak
     ports:
       - "55433:5432"
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "soak"]
-      interval: 2s
-      timeout: 2s
-      retries: 30
+    # No healthcheck here on purpose: each backend overlay defines
+    # its own, because compose merges healthcheck test arrays by
+    # concatenation, so an override can never replace a base check.
 
   api1:
     build:

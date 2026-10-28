@@ -91,6 +91,30 @@ pub fn audits_ddl(database_url: &str) -> &'static str {
     }
 }
 
+/// Apply a DDL script statement by statement. The crate's setup
+/// files hold several statements, and the MySQL driver refuses a
+/// multi-statement string (Postgres tolerates one, which is why
+/// this only bites on MySQL). Mirrors the `apply` helper in the
+/// crate's own real-database suites, comment lines and all.
+pub async fn apply_ddl<C: sea_orm::ConnectionTrait>(
+    db: &C,
+    script: &str,
+) -> Result<(), sea_orm::DbErr> {
+    let script = script
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("--"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for statement in script.split(';') {
+        let statement = statement.trim();
+        if statement.is_empty() {
+            continue;
+        }
+        db.execute_unprepared(statement).await?;
+    }
+    Ok(())
+}
+
 /// One note as the writer sends it. The sentinel fields are accepted
 /// on writes and never returned by any endpoint.
 #[derive(Clone, Debug, Serialize, Deserialize)]

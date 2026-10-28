@@ -21,10 +21,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 BACKEND="${BACKEND:-postgres}"
-COMPOSE=(docker compose -f docker-compose.yml)
-if [ "$BACKEND" = "mysql" ]; then
-    COMPOSE+=(-f docker-compose.mysql.yml)
-fi
+COMPOSE=(docker compose -f docker-compose.yml -f "docker-compose.$BACKEND.yml")
 
 case "${1:-up}" in
     up)

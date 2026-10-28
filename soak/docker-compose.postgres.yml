@@ -1,0 +1,11 @@
+# Postgres overlay: the base stack's database healthcheck lives
+# here (not in docker-compose.yml) so the MySQL overlay's check
+# never merges with it. soak.sh applies this file by default.
+
+services:
+  db:
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "soak"]
+      interval: 2s
+      timeout: 2s
+      retries: 30

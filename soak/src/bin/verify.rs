@@ -243,7 +243,9 @@ async fn run() -> Result<Vec<String>, String> {
             }
             ("bulk_create", "committed") => {
                 for id in &entry.row_ids {
-                    match claim(&mut rows, "create", id, &who, entry.actor.as_str(), |_| true) {
+                    match claim(&mut rows, "create", id, &who, entry.actor.as_str(), |_| {
+                        true
+                    }) {
                         Some(actor) if actor.as_deref() == Some(entry.actor.as_str()) => {}
                         Some(actor) => violations.push(format!(
                             "invariant 1: bulk create by {who} on {id} carries actor {actor:?}"
@@ -307,7 +309,9 @@ async fn run() -> Result<Vec<String>, String> {
             }
             ("delete", "committed") => {
                 for id in &entry.row_ids {
-                    match claim(&mut rows, "delete", id, &who, entry.actor.as_str(), |_| true) {
+                    match claim(&mut rows, "delete", id, &who, entry.actor.as_str(), |_| {
+                        true
+                    }) {
                         Some(actor) if actor.as_deref() == Some(entry.actor.as_str()) => {}
                         Some(actor) => violations.push(format!(
                             "invariant 1: delete by {who} on {id} carries actor {actor:?}"
@@ -327,7 +331,11 @@ async fn run() -> Result<Vec<String>, String> {
                     .unwrap_or(u64::MAX);
                 let mut matched = 0u64;
                 for id in &entry.row_ids {
-                    if claim(&mut rows, "delete", id, &who, entry.actor.as_str(), |_| true).is_some() {
+                    if claim(&mut rows, "delete", id, &who, entry.actor.as_str(), |_| {
+                        true
+                    })
+                    .is_some()
+                    {
                         matched += 1;
                     }
                 }
