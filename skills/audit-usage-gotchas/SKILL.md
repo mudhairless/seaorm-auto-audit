@@ -1,8 +1,8 @@
 ---
 name: audit-usage-gotchas
-description: Review a codebase's use of seaorm-auto-audit against the mistakes the coverage checker cannot see: run the checker binary first, then check scopes, spawned tasks, same-row interleaving, and graph saves by hand.
+description: Review a codebase's use of seaorm-auto-audit against the mistakes the coverage checker cannot see: run the checker binary first, then check scopes, spawned tasks, same-row interleaving, graph saves, and bulk filter indexes by hand.
 applies_to: seaorm-auto-audit >=0.9, <1.0
-revision: 1
+revision: 2
 ---
 
 # Audit usage gotchas review
@@ -104,6 +104,18 @@ ordinary request handling. Not a finding: the bulk wrappers keep
 their own guards under suspension (`update_many` still refuses to
 change a primary key, `insert_many` on MySQL still needs explicit
 keys). That is correct behavior, not a bug to report.
+
+### Bulk filters on unindexed columns
+
+The bulk wrappers read the rows their filter matches before
+writing, so an unindexed filter column means full scans under
+lock. On MySQL, concurrent bulk operations over an unindexed
+column take gap locks that can deadlock (error 1213), and one
+transaction is rolled back. When a bulk call site filters on a
+column, look for an index covering that column in the project's
+schema or migrations. No index is a finding: a latency problem on
+any backend, and an availability problem on MySQL under
+concurrency.
 
 ## Step 3: report
 

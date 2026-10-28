@@ -528,6 +528,12 @@ instead.
 - **Nested `builder().save()` runs the hooks per model.** Children in an object
   graph get audited with the same actor, on the same connection. Keep the graph
   save inside the transaction.
+- **Index the columns you bulk-filter on.** The bulk wrappers read the rows a
+  filter matches before they write, and an unindexed filter column means full
+  scans under lock. On MySQL, concurrent bulk operations over an unindexed
+  column take gap locks that can deadlock (error 1213), and one transaction
+  is rolled back. The crate's own soak test found this by running bulk
+  operations from several writers at once; an indexed filter column is the fix.
 
 A review checklist for a coding agent ships in
 [`skills/audit-usage-gotchas`](skills/audit-usage-gotchas/SKILL.md).
