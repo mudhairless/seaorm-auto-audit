@@ -1,7 +1,7 @@
 ---
 name: find-unmarked-reads
 description: Enumerate the fetch call sites of auditable entities in a codebase, classify which ones are user-facing reads, and mark the unmarked ones with record_read / record_reads from seaorm-auto-audit.
-applies_to: seaorm-auto-audit >=0.9, <1.0
+applies_to: seaorm-auto-audit >=0.9, <2.0
 revision: 1
 ---
 

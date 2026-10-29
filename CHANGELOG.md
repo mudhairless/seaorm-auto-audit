@@ -1,12 +1,18 @@
 # Changelog
 
 All notable changes to seaorm-auto-audit are recorded here. The format
-follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
-project aims to follow semantic versioning while it is pre-1.0: a minor
-version bump may carry a deliberate behavior change, and such changes are
-listed under Changed.
+follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). From
+1.0 the project follows Semantic Versioning; before 1.0, a minor version
+bump could carry a deliberate behavior change, listed under Changed.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-10-28
+
+First stable release. The public API as reviewed for 1.0 is the
+contract under Semantic Versioning from here on. The entries below
+are the deliberate changes made during that review, relative to
+0.9.0, followed by everything else that landed since.
 
 ### Fixed
 

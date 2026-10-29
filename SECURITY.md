@@ -4,11 +4,11 @@
 
 | Version | Supported |
 | ------- | --------- |
-| 0.9.x   | Yes       |
-| < 0.9   | No        |
+| 1.0.x   | Yes       |
+| < 1.0   | No        |
 
-This crate is pre-1.0 and maintained by one person. Fixes land in the
-newest 0.x release; there are no backports to older lines.
+This crate is maintained by one person. Fixes land in the newest
+release line; there are no backports to older lines.
 
 ## Reporting a vulnerability
 

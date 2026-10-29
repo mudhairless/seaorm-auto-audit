@@ -1,7 +1,7 @@
 ---
 name: audit-usage-gotchas
 description: Review a codebase's use of seaorm-auto-audit against the mistakes the coverage checker cannot see: run the checker binary first, then check scopes, spawned tasks, same-row interleaving, graph saves, and bulk filter indexes by hand.
-applies_to: seaorm-auto-audit >=0.9, <1.0
+applies_to: seaorm-auto-audit >=0.9, <2.0
 revision: 2
 ---
 
